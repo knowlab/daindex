@@ -8,10 +8,10 @@ When we have the two indices, each patient can then be represented as a point in
 ## Reference
 [Honghan Wu](https://knowlab.github.io/), Minhong Wang, Aneeta Sylolypavan, Sarah Wild. “Quantifying Health Inequalities Induced by Data and AI Models”. Accepted by IJCAI-ECAI2022 (April 2022). [slides](https://www.ucl.ac.uk/research-it-services/sites/research_it_services/files/quantifying_health_inequalities_induced_by_data_and_ai_models_0.pdf), [recording](https://web.microsoftstream.com/video/568b2e88-5c21-466e-9bbf-63274048161d), [preprint](https://knowlab.github.io/preprints/DA-AUC-IJCAI22.pdf).
 
-## Use
-Install `DAindex` python package
+## Install `DAindex` python package
 ```bash
 pip install DAindex
 ```
 
-Check 
+## Tutorials
+Check this tutorial: [DAindex-tutorial.ipynb](./DAindex-tutorial.ipynb)
