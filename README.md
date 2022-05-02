@@ -14,4 +14,5 @@ pip install DAindex
 ```
 
 ## Tutorials
-Check this tutorial: [DAindex-tutorial.ipynb](./DAindex-tutorial.ipynb)
+- Check this tutorial: [DAindex-tutorial.ipynb](./DAindex-tutorial.ipynb) for basic use of DAindex.
+- More tutorials will be added, including those for replicating studies on HiRID and MIMIC datasets.
