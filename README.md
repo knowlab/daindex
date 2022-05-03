@@ -1,4 +1,4 @@
-## Health inequality metric: allocation-deterioration framework (DAindex Framework)
+## Health inequality metric: deterioration-allocation framework (DAindex)
 This repo implements a **DA-AUC** (deterioration-allocation area under curve) for quantifying **inequality** between patient groups (a) embedded in datasets; or (b) induced by AI models. This is analogous to ROC-AUC for assessing performance of prediction models.
 
 ## Install `DAindex` python package
