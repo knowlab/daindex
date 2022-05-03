@@ -20,4 +20,5 @@ We define and quantify health inequalities in a generic resource allocation scen
 
 When we have the two indices, each patient can then be represented as a point in a two-dimensional space of *allocation index*, *deterioration index*. A group of patients is then translated into a set of points in the space, for which a regression model could be fitted to approximate as a curve in the space. The same could be done for another group. *The area between the two curves is then the deterioration difference between their corresponding patient groups, quantifying the inequalities induced by the `allocator`, i.e., the AI model that produces the allocation index*. The curve with the larger area under it represents the patient group which would be unfairly treated if the allocation index was to be used in allocating resources or services: a patient from this group would be deemed healthier than a patient from another group who is equally ill. The rest of this section gives technical details of realising key components of this conceptual framework.
 
-
+## Contact
+honghan.wu@ucl.ac.uk
