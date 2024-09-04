@@ -81,7 +81,7 @@ def compare_two_groups(
     return c1_di, c2_di, ineq
 
 
-def area(w_data):
+def area_under_curve(w_data):
     """
     calculate the area under curve - do NOT do interpolation
     """
@@ -113,7 +113,7 @@ def vis_DA_indices(data, label):
     plot dot-line for approximating a DA curve
     """
     w_data = data[np.where(data[:, 1] > 0)][:, [0, 2, 1]]
-    a, decision_area = area(w_data)
+    a, decision_area = area_under_curve(w_data)
     plt.plot(w_data[:, 0], w_data[:, 1], "-")
     plt.plot(w_data[:, 0], w_data[:, 1], "o", label=label)
     return a, decision_area, w_data
