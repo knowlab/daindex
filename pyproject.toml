@@ -1,0 +1,30 @@
+[tool.poetry]
+name = "da-index"
+version = "0.1.0"
+description = "Deterioration Allocation Index Framework"
+authors = ["Honghan <honghan.wu@gmail.com>", "HarrisonWilde <h.wilde@ucl.ac.uk>"]
+license = "LICENSE"
+readme = "README.md"
+repository = "https://github.com/knowlab/DAindex-Framework"
+keywords = ["evaluation", "fairness", "machine learning", "data science", "bias"]
+classifiers = [
+    "Development Status :: 3 - Alpha"
+]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pandas = "^2.2.2"
+numpy = "^2.1.1"
+matplotlib = "^3.9.2"
+
+[tool.poetry.group.dev]
+optional = true
+
+[tool.poetry.group.dev.dependencies]
+jupyter = "^1.1.1"
+notebook = "^7.2.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
