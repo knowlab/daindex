@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "da-index"
+name = "daindex"
 version = "0.1.0"
 description = "Deterioration Allocation Index Framework"
 authors = ["Honghan <honghan.wu@gmail.com>", "HarrisonWilde <h.wilde@ucl.ac.uk>"]
