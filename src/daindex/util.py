@@ -4,9 +4,11 @@ import numpy as np
 from daindex.core import db_ineq, deterioration_index
 
 
-# get the random sample for obtaining deterioration index
 def get_random_sample(df, feature, feature_gen_fun=None):
-    if feature_gen_fun is not None:
+    """
+    Extract the column relating to the feature and return it as a numpy array
+    """
+    if feature_gen_fun:
         X = df.apply(feature_gen_fun, axis=1).to_numpy().reshape(-1, 1)
     else:
         X = df[feature].to_numpy().reshape(-1, 1)
