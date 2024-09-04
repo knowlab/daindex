@@ -10,7 +10,7 @@ keywords = ["evaluation", "fairness", "machine learning", "data science", "bias"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License", # TODO: is it MIT? The License file implies maybe not?
+    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
 
