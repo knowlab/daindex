@@ -8,7 +8,10 @@ readme = "README.md"
 repository = "https://github.com/knowlab/DAindex-Framework"
 keywords = ["evaluation", "fairness", "machine learning", "data science", "bias"]
 classifiers = [
-    "Development Status :: 3 - Alpha"
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License", # TODO: is it MIT? The License file implies maybe not?
+    "Operating System :: OS Independent",
 ]
 
 [tool.poetry.dependencies]
@@ -16,6 +19,7 @@ python = "^3.10"
 pandas = "^2.2.2"
 numpy = "^2.1.1"
 matplotlib = "^3.9.2"
+scikit-learn = "^1.5.1"
 
 [tool.poetry.group.dev]
 optional = true
@@ -23,6 +27,8 @@ optional = true
 [tool.poetry.group.dev.dependencies]
 jupyter = "^1.1.1"
 notebook = "^7.2.2"
+tox = "^4.18.0"
+ruff = "^0.6.3"
 
 
 [build-system]
