@@ -56,14 +56,14 @@ When we have the two indices, each patient can then be represented as a point in
    df = pd.concat([df_female, df_male], ignore_index=True)
    df.info()   
    ```
-1. Import the DA index `Util` class
+1. Import the DA index `compare_two_groups` function:
     ```python
-    from DAindex import Util as qutil
+    from daindex.util import compare_two_groups
     ```
    
-2. Run inequality analysis between female and male. 
+2. Run inequality analysis between females and males:
    ```python
-   qutil.compare_two_groups(df[df.gender=='f'], df[df.gender=='m'], 'mm', 
+   compare_two_groups(df[df.gender=='f'], df[df.gender=='m'], 'mm', 
                             'female', 'male', '#Multimorbidity', 3, is_discrete=True)
    ```
    You will see something similar to.
