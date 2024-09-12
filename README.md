@@ -42,14 +42,9 @@ poetry install --with dev
 pre-commit install
 ```
 
-## Tutorials
-
-- This tutorial provides a basic use case for the DAindex: [DAindex-tutorial.ipynb](./DAindex-tutorial.ipynb).
-- More tutorials will be added, including those for replicating studies on HiRID and MIMIC datasets.
-
 ## Usage
 
-0. Create sample data for testing
+1. Create sample data for testing
    ```python
    import pandas as pd
    import numpy as np
@@ -68,12 +63,12 @@ pre-commit install
    # merge dataframes
    df = pd.concat([df_female, df_male], ignore_index=True)
    ```
-1. Import the `compare_two_groups` function:
+2. Import the `compare_two_groups` function:
     ```python
     from DAindex.util import compare_two_groups
     ```
 
-2. Run inequality analysis between the female and male groups:
+3. Run inequality analysis between the female and male groups:
    ```python
    compare_two_groups(
       df[df.gender=='f'], df[df.gender=='m'], 'mm',
@@ -88,6 +83,11 @@ pre-commit install
    0.7092018779342724)
    ```
    The result means the inequality of female vs male is `0.709`.
+
+## Tutorials
+
+- This tutorial provides a basic use case for the DAindex: [DAindex-tutorial.ipynb](./DAindex-tutorial.ipynb).
+- More tutorials will be added, including those for replicating studies on HiRID and MIMIC datasets.
 
 ## Contact
 
