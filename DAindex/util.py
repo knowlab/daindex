@@ -1,12 +1,14 @@
 import warnings
+from typing import Callable, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 from DAindex.core import db_ineq, deterioration_index
 
 
-def get_random_sample(df, feature, feature_gen_fun=None):
+def get_random_sample(df: pd.DataFrame, feature: str, feature_gen_fun: Callable = None) -> np.ndarray:
     """
     Extract the column relating to the feature and return it as a numpy array
     """
@@ -18,14 +20,14 @@ def get_random_sample(df, feature, feature_gen_fun=None):
 
 
 def compare_two_groups(
-    df1,
-    df2,
-    feature,
-    cohort_name1,
-    cohort_name2,
-    di_label,
-    threshold,
-    bandwidth=1,
+    df1: pd.DataFrame,
+    df2: pd.DataFrame,
+    feature: str,
+    cohort_name1: str,
+    cohort_name2: str,
+    di_label: str,
+    threshold: float | list[float],
+    bandwidth: float | Literal["scott", "silverman"] = 1.0,
     is_discrete=False,
     search_bandwidth=True,
     do_plot=True,
@@ -33,7 +35,7 @@ def compare_two_groups(
     reverse=False,
 ):
     """
-    # obtain the inequality quantification
+    Obtain the inequality quantification
     df1 - data frame of the first group
     df2 - data frame of the second group
     feature - the feature name of the measurement, not used if feature_gen_fun is not none
@@ -51,11 +53,11 @@ def compare_two_groups(
     min_v = min([np.min(X1), np.min(X2)])
     max_v = max([np.max(X1), np.max(X2)])
 
-    threshold1 = threshold
-    threshold2 = threshold
-    if type(threshold) is list:
+    if isinstance(threshold, list):
         threshold1 = threshold[0]
         threshold2 = threshold[1]
+    else:
+        threshold1 = threshold2 = threshold
     c1_di = deterioration_index(
         X1,
         min_v,
