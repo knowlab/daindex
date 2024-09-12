@@ -35,7 +35,7 @@ pip install DAindex
 
 ### Advanced install (for developers)
 
-After cloning the repository, you can install the package in a development `venv` using `poetry`:
+After cloning the repository, you can install the package in a development `venv` using [`poetry`](https://python-poetry.org/docs/):
 
 ```bash
 poetry install --with dev
