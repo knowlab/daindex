@@ -1,7 +1,9 @@
+import warnings
+
 import matplotlib.pyplot as plt
 import numpy as np
 
-from daindex.core import db_ineq, deterioration_index
+from DAindex.core import db_ineq, deterioration_index
 
 
 def get_random_sample(df, feature, feature_gen_fun=None):
@@ -83,7 +85,7 @@ def compare_two_groups(
     return c1_di, c2_di, ineq
 
 
-def area_under_curve(w_data):
+def area_under_curve(w_data, decision_boundary: float = 0.5):
     """
     calculate the area under curve - do NOT do interpolation
     """
@@ -95,7 +97,7 @@ def area_under_curve(w_data):
         if prev is not None:
             a = (r[1] + prev[1]) * (r[0] - prev[0]) / 2  # * r[2]
             area += a
-            if prev[0] >= 0.5:
+            if prev[0] >= decision_boundary:
                 decision_area += a
                 n_points += 1
         prev = r
@@ -103,7 +105,7 @@ def area_under_curve(w_data):
     if prev is not None:
         a = (r[1] + prev[1]) * (r[0] - prev[0]) / 2  # * r[2]
         area += a
-        if prev[0] >= 0.5:
+        if prev[0] >= decision_boundary:
             decision_area += a
             n_points += 1
 
@@ -121,7 +123,7 @@ def vis_DA_indices(data, label):
     return a, decision_area, w_data
 
 
-def viz(d1, d2, g1_label, g2_label, deterioration_label, allocation_label, config):
+def viz(d1, d2, g1_label, g2_label, deterioration_label, allocation_label, config, decision_boundary: float = 0.5):
     """
     do DA curve visualisation
     """
@@ -129,7 +131,7 @@ def viz(d1, d2, g1_label, g2_label, deterioration_label, allocation_label, confi
         plt.style.use(config["style"])
     font_size = config["font_size"] if "font_size" in config else 12
     if "fig_size" in config:
-        fig = plt.figure(figsize=config["fig_size"], dpi=200)
+        plt.figure(figsize=config["fig_size"], dpi=200)
 
     # do some clearning: remove those empty points
     d1 = np.delete(d1, np.where(d1[:, 1] == 0), axis=0)
@@ -154,14 +156,18 @@ def viz(d1, d2, g1_label, g2_label, deterioration_label, allocation_label, confi
     # print('{0}\t{1:.2%}\t{2:.2%}\t{3:.2%}'.format(deterioration, white_d_ratio, non_white_d_ratio,
     #                                      (non_white_d_ratio - white_d_ratio)/white_d_ratio))
     print("AUC\t{0:.6f}\t{1:.6f}\t{2:.2%}".format(a1, a2, (a2 - a1) / a1))
-    print("Decision AUC\t{0:.6f}\t{1:.6f}\t{2:.2%}".format(da1, da2, (da2 - da1) / da1))
+    try:
+        print("Decision AUC\t{0:.6f}\t{1:.6f}\t{2:.2%}".format(da1, da2, (da2 - da1) / da1))
+    except ZeroDivisionError:
+        warnings.warn("Zero division error in DA calculation")
+        print("Decision AUC\t{0:.6f}\t{1:.6f}\t{2:.2%}".format(da1, da2, 0))
 
     # figure finishing up
     plt.xlabel(allocation_label, fontsize=font_size)
     plt.ylabel(deterioration_label, fontsize=font_size)
 
     # plot decision region
-    plt.plot([0.5, 0.5], [0, 1], "--", lw=0.8, color="g")
-    plt.axvspan(0.5, 1, facecolor="b", alpha=0.1)
+    plt.plot([decision_boundary, decision_boundary], [0, 1], "--", lw=0.8, color="g")
+    plt.axvspan(decision_boundary, 1, facecolor="b", alpha=0.1)
 
     plt.legend(fontsize=font_size, loc="best")
