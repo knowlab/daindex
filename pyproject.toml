@@ -1,0 +1,55 @@
+[tool.poetry]
+name = "DAindex"
+version = "0.1.0"
+description = "Deterioration Allocation Index Framework"
+authors = ["Honghan <honghan.wu@gmail.com>", "HarrisonWilde <h.wilde@ucl.ac.uk>"]
+license = "LICENSE"
+readme = "README.md"
+repository = "https://github.com/knowlab/DAindex-Framework"
+keywords = ["evaluation", "fairness", "machine learning", "data science", "bias"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pandas = "^2.2.2"
+numpy = "^2.1.1"
+matplotlib = "^3.9.2"
+scikit-learn = "^1.5.1"
+
+[tool.poetry.group.dev]
+optional = true
+
+[tool.poetry.group.dev.dependencies]
+jupyter = "^1.1.1"
+notebook = "^7.2.2"
+tox = "^4.18.0"
+ruff = "^0.6.3"
+pre-commit = "^3.8.0"
+pre-commit-hooks = "^4.6.0"
+
+[tool.ruff]
+include = ["*.py", "*.pyi", "pyproject.toml", "*.ipynb"]
+line-length = 120
+indent-width = 4
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "C90", "I"]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[tool.ruff.lint.isort]
+known-first-party = ["DAindex"]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

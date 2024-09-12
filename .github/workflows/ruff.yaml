@@ -1,0 +1,12 @@
+name: Run `ruff`
+
+on: [push, pull_request]
+
+jobs:
+  check_format:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v3
+    - name: Run ruff
+      uses: chartboost/ruff-action@v1
