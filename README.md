@@ -4,7 +4,7 @@
 [![PyPI - Package Status](https://img.shields.io/pypi/status/DAIndex)](https://pypi.org/project/DAIndex/)
 [![PyPI - Latest Release](https://img.shields.io/pypi/v/DAIndex)](https://pypi.org/project/DAIndex/)
 [![PyPI - Wheel](https://img.shields.io/pypi/wheel/DAIndex)](https://pypi.org/project/DAIndex/)
-[![PyPI - License](https://img.shields.io/pypi/l/DAIndex)](https://github.com/knowlab/DAIndex/blob/main/LICENSE)
+[![PyPI - License](https://img.shields.io/pypi/l/DAIndex)](https://github.com/knowlab/DAIndex/blob/master/LICENSE)
 [![Snyk Package Health](https://snyk.io/advisor/python/DAIndex/badge.svg)](https://snyk.io/advisor/python/DAIndex)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
