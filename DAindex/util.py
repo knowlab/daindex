@@ -28,12 +28,12 @@ def compare_two_groups(
     di_label: str,
     threshold: float | list[float],
     bandwidth: float | Literal["scott", "silverman"] = 1.0,
-    is_discrete=False,
-    search_bandwidth=True,
-    do_plot=True,
-    feature_gen_fun=None,
-    reverse=False,
-):
+    is_discrete: bool = False,
+    optimise_bandwidth: bool = True,
+    do_plot: bool = True,
+    feature_gen_fun: Callable = None,
+    reverse: bool = False,
+) -> tuple[dict[str, int], dict[str, int], float]:
     """
     Obtain the inequality quantification
     df1 - data frame of the first group
@@ -67,7 +67,7 @@ def compare_two_groups(
         bandwidth=bandwidth,
         is_discrete=is_discrete,
         plot_title=f"{cohort_name1}| {di_label}",
-        search_bandwidth=search_bandwidth,
+        optimise_bandwidth=optimise_bandwidth,
         do_plot=do_plot,
     )
     c2_di = deterioration_index(
@@ -79,21 +79,20 @@ def compare_two_groups(
         bandwidth=bandwidth,
         is_discrete=is_discrete,
         plot_title=f"{cohort_name2}| {di_label}",
-        search_bandwidth=search_bandwidth,
+        optimise_bandwidth=optimise_bandwidth,
         do_plot=do_plot,
     )
     ineq = db_ineq(c1_di, c2_di)
-    # print(f'{cohort_name1} vs {cohort_name2} inequality on {di_label} is {ineq:.2%}')
     return c1_di, c2_di, ineq
 
 
-def area_under_curve(w_data, decision_boundary: float = 0.5):
+def area_under_curve(w_data: np.ndarray, decision_boundary: float = 0.5) -> tuple[float, float]:
     """
     calculate the area under curve - do NOT do interpolation
     """
     prev = None
-    area = 0
-    decision_area = 0
+    area = 0.0
+    decision_area = 0.0
     n_points = 0
     for r in w_data:
         if prev is not None:
@@ -114,7 +113,7 @@ def area_under_curve(w_data, decision_boundary: float = 0.5):
     return area, decision_area
 
 
-def vis_DA_indices(data, label):
+def vis_DA_indices(data: np.ndarray, label: str) -> tuple[float, float, np.ndarray]:
     """
     plot dot-line for approximating a DA curve
     """
@@ -125,7 +124,16 @@ def vis_DA_indices(data, label):
     return a, decision_area, w_data
 
 
-def viz(d1, d2, g1_label, g2_label, deterioration_label, allocation_label, config, decision_boundary: float = 0.5):
+def viz(
+    d1: np.ndarray,
+    d2: np.ndarray,
+    g1_label: str,
+    g2_label: str,
+    deterioration_label: str,
+    allocation_label: str,
+    config: dict,
+    decision_boundary: float = 0.5,
+) -> None:
     """
     do DA curve visualisation
     """
