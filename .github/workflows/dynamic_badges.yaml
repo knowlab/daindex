@@ -41,7 +41,7 @@ jobs:
         run: poetry install --no-interaction --with dev
       - name: Run Coverage
         run: |
-          poetry run pytest --cov daindex/*
+          poetry run pytest --cov daindex tests
           echo "COVERAGE=$(poetry run coverage report --format markdown --precision 1 | awk -F'|' 'END{gsub(/ *(\*\*|%)* */, "", $(NF-1)); print $(NF-1)}')" >> $GITHUB_ENV
       - name: Create Coverage Badge
         uses: schneegans/dynamic-badges-action@v1.6.0
