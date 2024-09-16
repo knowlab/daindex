@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from sklearn.neighbors import KernelDensity
 
-import daindex
+import daindex  # noqa F401
 from daindex.core import kde_estimate  # Adjust the import based on your actual module structure
 
 
