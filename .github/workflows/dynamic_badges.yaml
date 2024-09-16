@@ -1,0 +1,108 @@
+name: Dynamic Badges
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  coverage-badge:
+
+    name: Update Coverage and Tests Passing Badge
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check-out repository
+        uses: actions/checkout@v3
+      - name: Setup python
+        id: setup-python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      - name: Load cached Poetry installation
+        id: cached-poetry
+        uses: actions/cache@v3
+        with:
+          path: ~/.local
+          key: poetry-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}
+      - name: Install Poetry
+        if: steps.cached-poetry.outputs.cache-hit != 'true'
+        uses: snok/install-poetry@v1
+      - name: Configure Poetry
+        run: poetry config virtualenvs.in-project true
+      - name: Load cached venv
+        id: cached-poetry-dependencies-2
+        uses: actions/cache@v3
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+      - name: Install dependencies
+        if: steps.cached-poetry-dependencies-2.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction --no-root --with dev
+      - name: Install project
+        run: poetry install --no-interaction --with dev
+      - name: Run Coverage
+        run: |
+          poetry run pytest --cov src/*
+          echo "COVERAGE=$(poetry run coverage report --format markdown --precision 1 | awk -F'|' 'END{gsub(/ *(\*\*|%)* */, "", $(NF-1)); print $(NF-1)}')" >> $GITHUB_ENV
+      - name: Create Coverage Badge
+        uses: schneegans/dynamic-badges-action@v1.6.0
+        with:
+          auth: ${{ secrets.GIST_SECRET }}
+          gistID: 980a5940c78997c3c75164953475a0dc
+          filename: coverage.json
+          label: test coverage
+          message: ${{ env.COVERAGE }}%
+          valColorRange: ${{ env.COVERAGE }}
+          minColorRange: 0
+          maxColorRange: 100
+      - name: Run Tests
+        run: |
+          echo "COLLECTED=$(poetry run pytest --collect-only | grep -m 1 "collected" | awk '{print $2;}' | tr -d '[:space:]\n')" >> $GITHUB_ENV
+          echo "PASSED=$(poetry run pytest --verbose | grep -o "PASSED" | wc -l | tr -d '[:space:]\n')" >> $GITHUB_ENV
+      - name: Create Tests Passing Badge
+        uses: schneegans/dynamic-badges-action@v1.6.0
+        with:
+          auth: ${{ secrets.GIST_SECRET }}
+          gistID: 980a5940c78997c3c75164953475a0dc
+          filename: tests.json
+          label: tests passing
+          message: ${{ env.PASSED }} / ${{ env.COLLECTED }}
+          valColorRange: ${{ env.PASSED }}
+          minColorRange: 0
+          maxColorRange: ${{ env.COLLECTED }}
+  update-badges:
+
+    name: Update CLOC Badges
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+      - name: Download cloc
+        run: sudo apt-get update -y && sudo apt-get install -y cloc
+      - name: Get the Numbers
+        run: |
+          echo "CODE_LINES=$(.github/cloc.sh --loc)" >> $GITHUB_ENV
+          echo "COMMENT_PERCENTAGE=$(.github/cloc.sh --percentage)" >> $GITHUB_ENV
+      - name: Create Lines-of-Code Badge
+        uses: schneegans/dynamic-badges-action@v1.6.0
+        with:
+          auth: ${{ secrets.GIST_SECRET }}
+          gistID: 980a5940c78997c3c75164953475a0dc
+          filename: loc.json
+          label: lines of code
+          message: ${{ env.CODE_LINES }}
+          color: blue
+      - name: Create Comments Badge
+        uses: schneegans/dynamic-badges-action@v1.6.0
+        with:
+          auth: ${{ secrets.GIST_SECRET }}
+          gistID: 980a5940c78997c3c75164953475a0dc
+          filename: comments.json
+          label: comment percentage
+          message: ${{ env.COMMENT_PERCENTAGE }}%
+          valColorRange: ${{ env.COMMENT_PERCENTAGE }}
+          maxColorRange: 40
+          minColorRange: 0

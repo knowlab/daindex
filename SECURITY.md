@@ -8,4 +8,4 @@
 
 ## Reporting a Vulnerability
 
-Please report vulnerabilities by opening an [issue](https://github.com/knowlab/DAindex-Framework/issues/new) and adding the **vulnerability** label. We will deal with any vulnerabilities ASAP.
+Please report vulnerabilities by opening an [issue](https://github.com/knowlab/daindex-Framework/issues/new) and adding the **vulnerability** label. We will deal with any vulnerabilities ASAP.

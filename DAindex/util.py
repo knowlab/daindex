@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from DAindex.core import db_ineq, deterioration_index
+from daindex.core import db_ineq, deterioration_index
 
 
 def get_random_sample(df: pd.DataFrame, feature: str, feature_gen_fun: Callable = None) -> np.ndarray:

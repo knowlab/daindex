@@ -1,12 +1,18 @@
 # The Deterioration-Allocation Index (DAIndex): A framework for health inequality evaluation
 
+
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/DAIndex)](https://www.python.org/downloads/)
 [![PyPI - Package Status](https://img.shields.io/pypi/status/DAIndex)](https://pypi.org/project/DAIndex/)
 [![PyPI - Latest Release](https://img.shields.io/pypi/v/DAIndex)](https://pypi.org/project/DAIndex/)
 [![PyPI - Wheel](https://img.shields.io/pypi/wheel/DAIndex)](https://pypi.org/project/DAIndex/)
 [![PyPI - License](https://img.shields.io/pypi/l/DAIndex)](https://github.com/knowlab/DAindex-Framework/blob/master/LICENSE)
-[![Snyk Package Health](https://snyk.io/advisor/python/DAIndex/badge.svg)](https://snyk.io/advisor/python/DAIndex)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+
+![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/HarrisonWilde/980a5940c78997c3c75164953475a0dc/raw/coverage.json)
+![Tests Passing](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/HarrisonWilde/980a5940c78997c3c75164953475a0dc/raw/tests.json)
+![Lines of Code](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/HarrisonWilde/980a5940c78997c3c75164953475a0dc/raw/loc.json)
+![Percentage Comments](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/HarrisonWilde/980a5940c78997c3c75164953475a0dc/raw/comments.json)
+[![Snyk Package Health](https://snyk.io/advisor/python/DAIndex/badge.svg)](https://snyk.io/advisor/python/DAIndex)
 
 This repository implements a **DA-AUC** (deterioration-allocation area under curve) metric for quantifying **inequality** between patient groups (a) embedded in datasets; or (b) induced by statistical / ML / AI models. This is analogous to ROC-AUC for assessing performance of prediction models.
 
@@ -27,10 +33,10 @@ The **area** between the two curves is then the deterioration difference between
 See the paper for more details: [Quantifying Health Inequalities Induced by Data and AI Models](https://doi.org/10.24963/ijcai.2022/721).
 
 
-## Installation of the `DAindex` python package
+## Installation of the `daindex` python package
 
 ```bash
-pip install DAindex
+pip install daindex
 ```
 
 ### Advanced install (for developers)
@@ -65,7 +71,7 @@ pre-commit install
    ```
 2. Import the `compare_two_groups` function:
     ```python
-    from DAindex.util import compare_two_groups
+    from daindex.util import compare_two_groups
     ```
 
 3. Run inequality analysis between the female and male groups:
@@ -86,7 +92,7 @@ pre-commit install
 
 ## Tutorials
 
-- This tutorial provides a basic use case for the DAindex: [DAindex-tutorial.ipynb](./DAindex-tutorial.ipynb).
+- We provide a basic use case for the deterioration-allocation index: [basic_tutorial.ipynb](./tutorials/basic_tutorial.ipynb).
 - More tutorials will be added, including those for replicating studies on HiRID and MIMIC datasets.
 
 ## Contact
