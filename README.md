@@ -1,18 +1,18 @@
 # The Deterioration-Allocation Index (`daindex`): A framework for health inequality evaluation
 
 
-[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/DAIndex)](https://www.python.org/downloads/)
-[![PyPI - Package Status](https://img.shields.io/pypi/status/DAIndex)](https://pypi.org/project/DAIndex/)
-[![PyPI - Latest Release](https://img.shields.io/pypi/v/DAIndex)](https://pypi.org/project/DAIndex/)
-[![PyPI - Wheel](https://img.shields.io/pypi/wheel/DAIndex)](https://pypi.org/project/DAIndex/)
-[![PyPI - License](https://img.shields.io/pypi/l/DAIndex)](https://github.com/knowlab/DAindex-Framework/blob/master/LICENSE)
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/daindex)](https://www.python.org/downloads/)
+[![PyPI - Package Status](https://img.shields.io/pypi/status/daindex)](https://pypi.org/project/daindex/)
+[![PyPI - Latest Release](https://img.shields.io/pypi/v/daindex)](https://pypi.org/project/daindex/)
+[![PyPI - Wheel](https://img.shields.io/pypi/wheel/daindex)](https://pypi.org/project/daindex/)
+[![PyPI - License](https://img.shields.io/pypi/l/daindex)](https://github.com/knowlab/daindex/blob/master/LICENSE)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 ![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/HarrisonWilde/980a5940c78997c3c75164953475a0dc/raw/coverage.json)
 ![Tests Passing](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/HarrisonWilde/980a5940c78997c3c75164953475a0dc/raw/tests.json)
 ![Lines of Code](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/HarrisonWilde/980a5940c78997c3c75164953475a0dc/raw/loc.json)
 ![Percentage Comments](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/HarrisonWilde/980a5940c78997c3c75164953475a0dc/raw/comments.json)
-[![Snyk Package Health](https://snyk.io/advisor/python/DAIndex/badge.svg)](https://snyk.io/advisor/python/DAIndex)
+[![Snyk Package Health](https://snyk.io/advisor/python/daindex/badge.svg)](https://snyk.io/advisor/python/daindex)
 
 This repository implements a **DA-AUC** (deterioration-allocation area under curve) metric for quantifying **inequality** between patient groups (a) embedded in datasets; or (b) induced by statistical / ML / AI models. This is analogous to ROC-AUC for assessing performance of prediction models.
 
