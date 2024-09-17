@@ -196,8 +196,6 @@ def deterioration_index(
         s = max(threshold, low_bound)
         e = up_bound
 
-    print(type(low_bound), type(e))
-
     # 1. binary like multimorbidity num > 3, yes or no
     sq1 = stepped_severity(
         probs,
