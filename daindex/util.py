@@ -126,7 +126,7 @@ def vis_DA_indices(data: np.ndarray, label: str) -> tuple[float, float, np.ndarr
 def calc_ratios(a1: float, a2: float, da1: float, da2: float) -> dict[str, float | str]:
     ratio = (a2 - a1) / a1
     decision_ratio = ((da2 - da1) / da1) if da1 != 0 else "N/A"
-    return {"AUC": ratio, "Decision AUC": decision_ratio}
+    return {"AUC Ratio": ratio, "Decision AUC Ratio": decision_ratio}
 
 
 def get_DA_curve(
@@ -192,7 +192,9 @@ def calc_area(data: np.ndarray) -> tuple[float, float]:
     return area_under_curve(wd)
 
 
-def get_DA_ratios(d1: np.ndarray, d2: np.ndarray, verbose: bool = False) -> dict[str, float | str]:
+def get_DA_ratios(
+    d1: np.ndarray, d2: np.ndarray, verbose: bool = False, return_areas: bool = False
+) -> dict[str, float | str]:
     """
     Calculate the area under curve ratios
     """
@@ -208,6 +210,9 @@ def get_DA_ratios(d1: np.ndarray, d2: np.ndarray, verbose: bool = False) -> dict
     a2, da2 = calc_area(d2)
 
     ratios = calc_ratios(a1, a2, da1, da2)
+
+    if return_areas:
+        ratios.update({"AUC1": a1, "AUC2": a2, "Decision AUC1": da1, "Decision AUC2": da2})
 
     if verbose:
         print("AUC\t{0:.6f}\t{1:.6f}\t{2:.2%}".format(a1, a2, ratios["AUC"]))
