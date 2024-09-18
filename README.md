@@ -1,4 +1,4 @@
-# The Deterioration-Allocation Index (`daindex`): A framework for health inequality evaluation
+# The Deterioration-Allocation Index: A framework for health inequality evaluation
 
 
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/daindex)](https://www.python.org/downloads/)
