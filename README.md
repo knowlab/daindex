@@ -93,6 +93,7 @@ pre-commit install
 ## Tutorials
 
 - We provide a basic use case for the deterioration-allocation index: [basic_tutorial.ipynb](./tutorials/basic_tutorial.ipynb).
+- A more complex tutorial around the MEPS dataset is under construction: [meps_tutorial.ipynb](./tutorials/meps_tutorial.ipynb).
 - More tutorials will be added, including those for replicating studies on HiRID and MIMIC datasets.
 
 ## Contact
