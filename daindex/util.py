@@ -131,7 +131,7 @@ def viz(
     g2_label: str,
     deterioration_label: str,
     allocation_label: str,
-    config: dict,
+    config: dict = {},
     decision_boundary: float = 0.5,
 ) -> None:
     """
