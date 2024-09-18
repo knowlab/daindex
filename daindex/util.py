@@ -1,4 +1,3 @@
-import warnings
 from typing import Callable, Literal
 
 import matplotlib.pyplot as plt
@@ -124,7 +123,13 @@ def vis_DA_indices(data: np.ndarray, label: str) -> tuple[float, float, np.ndarr
     return a, decision_area, w_data
 
 
-def viz(
+def calc_ratios(a1: float, a2: float, da1: float, da2: float) -> dict[str, float | str]:
+    ratio = (a2 - a1) / a1
+    decision_ratio = ((da2 - da1) / da1) if da1 != 0 else "N/A"
+    return {"AUC": ratio, "Decision AUC": decision_ratio}
+
+
+def get_DA_curve(
     d1: np.ndarray,
     d2: np.ndarray,
     g1_label: str,
@@ -133,7 +138,8 @@ def viz(
     allocation_label: str,
     config: dict = {},
     decision_boundary: float = 0.5,
-) -> None:
+    verbose: bool = True,
+) -> dict[str, float | str]:
     """
     do DA curve visualisation
     """
@@ -162,15 +168,11 @@ def viz(
     a1, da1, _ = vis_DA_indices(d1, g1_label)
     a2, da2, _ = vis_DA_indices(d2, g2_label)
 
-    # generate output
-    # print('{0}\t{1:.2%}\t{2:.2%}\t{3:.2%}'.format(deterioration, white_d_ratio, non_white_d_ratio,
-    #                                      (non_white_d_ratio - white_d_ratio)/white_d_ratio))
-    print("AUC\t{0:.6f}\t{1:.6f}\t{2:.2%}".format(a1, a2, (a2 - a1) / a1))
-    try:
-        print("Decision AUC\t{0:.6f}\t{1:.6f}\t{2:.2%}".format(da1, da2, (da2 - da1) / da1))
-    except ZeroDivisionError:
-        warnings.warn("Zero division error in DA calculation")
-        print("Decision AUC\t{0:.6f}\t{1:.6f}\t{2:.2%}".format(da1, da2, 0))
+    ratios = calc_ratios(a1, a2, da1, da2)
+
+    if verbose:
+        print("AUC\t{0:.6f}\t{1:.6f}\t{2:.2%}".format(a1, a2, ratios["AUC"]))
+        print("Decision AUC\t{0:.6f}\t{1:.6f}\t{2:.2%}".format(da1, da2, ratios["Decision AUC"]))
 
     # figure finishing up
     plt.xlabel(allocation_label, fontsize=font_size)
@@ -182,8 +184,33 @@ def viz(
 
     plt.legend(fontsize=font_size, loc="best")
 
-    return_dict = {"AUC": (a2 - a1) / a1}
-    if da1:
-        return_dict.update({"Decision AUC": (da2 - da1) / da1})
+    return ratios
 
-    return return_dict
+
+def calc_area(data: np.ndarray) -> tuple[float, float]:
+    wd = data[np.where(data[:, 1] > 0)][:, [0, 2, 1]]
+    return area_under_curve(wd)
+
+
+def get_DA_ratios(d1: np.ndarray, d2: np.ndarray, verbose: bool = False) -> dict[str, float | str]:
+    """
+    Calculate the area under curve ratios
+    """
+    # do some clearning: remove those empty points
+    d1 = np.delete(d1, np.where(d1[:, 1] == 0), axis=0)
+    d2 = np.delete(d2, np.where(d2[:, 1] == 0), axis=0)
+    # make two datasets even in terms of max x val
+    x_min = min(np.max(d1[:, 0]), np.max(d2[:, 0]))
+    d1 = np.delete(d1, np.where(d1[:, 0] > x_min), axis=0)
+    d2 = np.delete(d2, np.where(d2[:, 0] > x_min), axis=0)
+
+    a1, da1 = calc_area(d1)
+    a2, da2 = calc_area(d2)
+
+    ratios = calc_ratios(a1, a2, da1, da2)
+
+    if verbose:
+        print("AUC\t{0:.6f}\t{1:.6f}\t{2:.2%}".format(a1, a2, ratios["AUC"]))
+        print("Decision AUC\t{0:.6f}\t{1:.6f}\t{2:.2%}".format(da1, da2, ratios["Decision AUC"]))
+
+    return ratios
