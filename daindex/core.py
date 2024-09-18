@@ -102,7 +102,6 @@ def kde_estimate(
 
     kde = KernelDensity(bandwidth=bandwidth, kernel=kernel)
     kde.fit(X)
-
     return kde, bandwidth
 
 

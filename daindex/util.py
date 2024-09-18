@@ -131,7 +131,7 @@ def viz(
     g2_label: str,
     deterioration_label: str,
     allocation_label: str,
-    config: dict,
+    config: dict = {},
     decision_boundary: float = 0.5,
 ) -> None:
     """
@@ -181,3 +181,9 @@ def viz(
     plt.axvspan(decision_boundary, 1, facecolor="b", alpha=0.1)
 
     plt.legend(fontsize=font_size, loc="best")
+
+    return_dict = {"AUC": (a2 - a1) / a1}
+    if da1:
+        return_dict.update({"Decision AUC": (da2 - da1) / da1})
+
+    return return_dict
