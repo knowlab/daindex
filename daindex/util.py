@@ -126,10 +126,10 @@ def vis_DA_indices(data: np.ndarray, label: str) -> tuple[float, float, np.ndarr
 def calc_ratios(a1: float, a2: float, da1: float, da2: float) -> dict[str, float | str]:
     ratio = (a2 - a1) / a1
     decision_ratio = ((da2 - da1) / da1) if da1 != 0 else "N/A"
-    return {"AUC Ratio": ratio, "Decision AUC Ratio": decision_ratio}
+    return {"Full": ratio, "Decision": decision_ratio}
 
 
-def get_DA_curve(
+def get_da_curve(
     d1: np.ndarray,
     d2: np.ndarray,
     g1_label: str,
@@ -139,7 +139,7 @@ def get_DA_curve(
     config: dict = {},
     decision_boundary: float = 0.5,
     verbose: bool = True,
-) -> dict[str, float | str]:
+) -> tuple[dict[str, float | str], plt.Figure]:
     """
     do DA curve visualisation
     """
@@ -171,8 +171,8 @@ def get_DA_curve(
     ratios = calc_ratios(a1, a2, da1, da2)
 
     if verbose:
-        print("AUC\t{0:.6f}\t{1:.6f}\t{2:.2%}".format(a1, a2, ratios["AUC"]))
-        print("Decision AUC\t{0:.6f}\t{1:.6f}\t{2:.2%}".format(da1, da2, ratios["Decision AUC"]))
+        print("Ratio\t{0:.6f}\t{1:.6f}\t{2:.2%}".format(a1, a2, ratios["Full"]))
+        print("Decision Ratio\t{0:.6f}\t{1:.6f}\t{2:.2%}".format(da1, da2, ratios["Decision"]))
 
     # figure finishing up
     plt.xlabel(allocation_label, fontsize=font_size)
@@ -184,7 +184,10 @@ def get_DA_curve(
 
     plt.legend(fontsize=font_size, loc="best")
 
-    return ratios
+    fig = plt.gcf()
+    plt.close()
+
+    return ratios, fig
 
 
 def calc_area(data: np.ndarray) -> tuple[float, float]:
@@ -192,7 +195,7 @@ def calc_area(data: np.ndarray) -> tuple[float, float]:
     return area_under_curve(wd)
 
 
-def get_DA_ratios(
+def get_da_ratios(
     d1: np.ndarray, d2: np.ndarray, verbose: bool = False, return_areas: bool = False
 ) -> dict[str, float | str]:
     """
@@ -215,7 +218,7 @@ def get_DA_ratios(
         ratios.update({"AUC1": a1, "AUC2": a2, "Decision AUC1": da1, "Decision AUC2": da2})
 
     if verbose:
-        print("AUC\t{0:.6f}\t{1:.6f}\t{2:.2%}".format(a1, a2, ratios["AUC"]))
-        print("Decision AUC\t{0:.6f}\t{1:.6f}\t{2:.2%}".format(da1, da2, ratios["Decision AUC"]))
+        print("Ratio\t{0:.6f}\t{1:.6f}\t{2:.2%}".format(a1, a2, ratios["Full"]))
+        print("Decision Ratio\t{0:.6f}\t{1:.6f}\t{2:.2%}".format(da1, da2, ratios["Decision"]))
 
     return ratios
