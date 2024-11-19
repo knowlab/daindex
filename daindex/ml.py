@@ -77,9 +77,9 @@ def obtain_da_index(
                     f"Sub-optimal number of samples for DAI calculation, {len(det_list)} is acceptable but {det_list_lengths[0]} is preferred."
                 )
             break
-        else:
-            warnings.warn(f"Insufficient number of samples for DAI calculation, {len(det_list)} < {det_list_length}.")
-            return len(det_list), 0
+    else:
+        warnings.warn(f"Insufficient number of samples for DAI calculation, {len(det_list)} < {det_list_lengths[-1]}.")
+        return len(det_list), 0
 
     X = np.array(det_list)
     di_ret = deterioration_index(
