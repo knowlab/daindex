@@ -588,7 +588,7 @@ class DAIndex(object):
         )
         print(f"Reference group: {reference_group}, Comparison group: {other_group}")
         print(
-            f"Full AUC Ratio = {(ratios["Full"] * 100):.2f}%, Decision AUC Ratio = {(ratios["Decision"] * 100 if ratios["Decision"] != "N/A" else "N/A"):.2f}%"
+            f"Full AUC Ratio = {(ratios['Full'] * 100):.2f}%, Decision AUC Ratio = {(ratios['Decision'] * 100 if ratios['Decision'] != 'N/A' else 'N/A'):.2f}%"
         )
         display(fig)
 
