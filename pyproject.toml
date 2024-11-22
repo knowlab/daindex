@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "daindex"
-version = "0.3.2"
+version = "0.4.0"
 description = "Deterioration Allocation Index Framework"
 authors = ["Honghan <honghan.wu@gmail.com>", "HarrisonWilde <h.wilde@ucl.ac.uk>"]
 license = "MIT"
@@ -22,6 +22,7 @@ matplotlib = "^3.9.2"
 scikit-learn = "^1.5.1"
 joblib = "^1.4.2"
 tqdm = "^4.67.0"
+ipython = "^8.29.0"
 
 [tool.poetry.group.dev]
 optional = true
