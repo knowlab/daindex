@@ -587,7 +587,9 @@ class DAIndex(object):
             self.group_figures[(reference_group, other_group)],
         )
         print(f"Reference group: {reference_group}, Comparison group: {other_group}")
-        print(f"Ratios: {ratios}")
+        print(
+            f"Full AUC Ratio = {(ratios["Full"] * 100):.2f}%, Decision AUC Ratio = {(ratios["Decision"] * 100 if ratios["Decision"] != "N/A" else "N/A"):.2f}%"
+        )
         display(fig)
 
     def present_all_results(self):
