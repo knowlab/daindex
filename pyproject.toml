@@ -20,6 +20,8 @@ pandas = "^2.2.2"
 numpy = ">=1.16"
 matplotlib = "^3.9.2"
 scikit-learn = "^1.5.1"
+joblib = "^1.4.2"
+tqdm = "^4.67.0"
 
 [tool.poetry.group.dev]
 optional = true

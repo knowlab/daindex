@@ -1,0 +1,609 @@
+import warnings
+from typing import Any, Callable, Literal, Protocol, runtime_checkable
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from IPython.display import display
+from joblib import Parallel, delayed
+from sklearn.model_selection import GridSearchCV, KFold
+from sklearn.neighbors import KernelDensity
+from tqdm.autonotebook import tqdm
+
+
+@runtime_checkable
+class ProbabilisticModel(Protocol):
+    def predict_proba(self, X: np.ndarray) -> np.ndarray: ...
+
+
+class DeteriorationFeature(object):
+    def __init__(
+        self,
+        col: str,
+        threshold: float,
+        label: str = None,
+        func: Callable = None,
+        is_discrete: bool = False,
+        prev_discrete_value_offset: int = 1,
+        reverse: bool = False,
+    ):
+        self.col = col
+        self.threshold = threshold
+        self.label = label or col
+        self.func = func
+        self.is_discrete = is_discrete
+        self.prev_discrete_value_offset = prev_discrete_value_offset
+        self.reverse = reverse
+
+
+class DAIndex(object):
+    def __init__(
+        self,
+        cohort: pd.DataFrame,
+        group_col: str,
+        groups: dict[str, Any],
+        det_feature: DeteriorationFeature,
+        steps: int = 50,
+        score_margin_multiplier: float = 5.0,
+        det_list_lengths: list[int] = [20, 10, 5],
+        bandwidth: float | Literal["scott", "silverman"] = 1.0,
+        optimise_bandwidth: bool = False,
+        kernel: Literal["gaussian", "tophat", "epanechnikov", "exponential", "linear", "cosine"] = "gaussian",
+        n_samples: int = 10000,
+        weight_sum_steps: int = 10,
+        n_jobs: int = -1,
+        model_name: str = None,
+        decision_boundary: float = 0.5,
+    ):
+        self.cohort = cohort
+        self.group_col = group_col
+        self.groups = groups
+
+        self.setup_deterioration_feature(det_feature)
+        self.setup_daauc_params(
+            steps,
+            score_margin_multiplier,
+            det_list_lengths,
+            bandwidth,
+            optimise_bandwidth,
+            kernel,
+            n_samples,
+            weight_sum_steps,
+            n_jobs,
+        )
+
+        self.model_name = model_name or "Allocation"
+        self.decision_boundary = decision_boundary
+
+        self.group_scores = {}
+        self.group_ksteps = {}
+        self.group_ratios = {}
+        self.group_figures = {}
+
+    def setup_daauc_params(
+        self,
+        steps: int = 50,
+        score_margin_multiplier: float = 5.0,
+        det_list_lengths: list[int] = [20, 10, 5],
+        bandwidth: float | Literal["scott", "silverman"] = 1.0,
+        optimise_bandwidth: bool = False,
+        kernel: Literal["gaussian", "tophat", "epanechnikov", "exponential", "linear", "cosine"] = "gaussian",
+        n_samples: int = 10000,
+        weight_sum_steps: int = 10,
+        n_jobs: int = -1,
+    ):
+        self.steps = steps
+        self.score_margin_multiplier = score_margin_multiplier
+        self.step_scores = np.linspace(0, 1, self.steps + 1)[1:] - 1 / (2 * self.steps)
+        self.step_score_bounds = {
+            s: (
+                max(0.0, s - (1 / (2 * self.steps)) * self.score_margin_multiplier),
+                min(1.0, s + (1 / (2 * self.steps)) * self.score_margin_multiplier),
+            )
+            for s in self.step_scores
+        }
+        det_list_lengths.sort(reverse=True)
+        self.det_list_lengths = det_list_lengths
+        self.bandwidth = bandwidth
+        self.optimise_bandwidth = optimise_bandwidth
+        self.kernel = kernel
+        self.n_samples = n_samples
+        self.weight_sum_steps = weight_sum_steps
+        self.n_jobs = n_jobs
+
+    def setup_deterioration_feature(self, det_feature: DeteriorationFeature):
+        self.det_feature = det_feature
+        self.min_det_val = self.cohort[self.cohort[self.group_col].isin(self.groups.values())][
+            self.det_feature.col
+        ].min()
+        self.max_det_val = self.cohort[self.cohort[self.group_col].isin(self.groups.values())][
+            self.det_feature.col
+        ].max()
+
+    def _gridsearch_bandwidth(self, X: np.ndarray) -> float:
+        """
+        Search for the best bandwith for the KDE
+        """
+        bandwidths = np.linspace(0, 1, 20)
+        grid = GridSearchCV(KernelDensity(kernel="gaussian"), {"bandwidth": bandwidths}, cv=KFold(5))
+        grid.fit(X)
+        return grid.best_params_["bandwidth"]
+
+    def _kde_estimate(self, X: np.ndarray) -> KernelDensity:
+        """
+        Kernel density estimation to get probability
+        """
+        if self.optimise_bandwidth:
+            bandwidth = self._gridsearch_bandwidth(X)
+        else:
+            bandwidth = self.bandwidth
+        kde = KernelDensity(bandwidth=bandwidth, kernel=self.kernel)
+        kde.fit(X)
+
+        # detect pulse like PDF
+        if bandwidth < 0.1:
+            # force is_discrete because the bestfitted_bandwith_bw would lead to one
+            self.is_discrete = True
+        elif bandwidth > 0.7:
+            # force is_discrete to be false because the fitted_bandwith would lead to one
+            self.is_discrete = False
+
+        return kde
+
+    def _search_for_zero_mass_index(self, kde: KernelDensity, min_v: float, n_samples: int = 100) -> tuple[int, float]:
+        """
+        Search near zero probability mass for boundary adjustment
+        """
+        bins = np.linspace(min_v - 10, min_v, n_samples)
+        pd_vals = np.exp(kde.score_samples(bins.reshape(-1, 1)))
+        first_zero_idx = np.max(np.where(pd_vals < 1e-10))
+        return first_zero_idx, bins[first_zero_idx]
+
+    def _get_threshold_index(
+        self,
+        threshold: float,
+        low_bound: float,
+        step: float,
+        boundary_offset: float,
+    ) -> int:
+        """
+        Calculate threshold value index
+        """
+        threshold_index = int((threshold - low_bound) / step)
+        if threshold == low_bound + boundary_offset:
+            threshold_index = int((threshold - low_bound - boundary_offset) / step)
+        elif self.is_discrete:
+            # discrete values will lead to PDF shape like pulses,
+            # it's important to start with the valley between the pulse you want to include and the one before that
+            # the following is to find the valley index
+            threshold_index_prev = int((threshold - self.det_feature.prev_discrete_value_offset - low_bound) / step)
+            threshold_index = int(threshold_index_prev + (threshold_index - threshold_index_prev) / 2)
+        return threshold_index
+
+    def _stepped_severity(
+        self,
+        probs: np.ndarray,
+        s: float,
+        e: float,
+        low_bound: float,
+        step_width: float,
+        boundary_offset: float,
+    ) -> float:
+        """
+        To quantify severity by considering higher values as more severe.
+        This is done by weighted sum by integrating probs from a threshold - s
+        """
+
+        bins = np.linspace(s, e, self.weight_sum_steps)
+        bin_probs = []
+        for i, t in enumerate(bins):
+            idx1 = self._get_threshold_index(t, low_bound, step_width, boundary_offset)
+            if i < len(bins) - 1:
+                idx2 = self._get_threshold_index(bins[i + 1], low_bound, step_width, boundary_offset)
+                bin_probs.append(probs[idx1:idx2].sum())
+            else:
+                (
+                    bin_probs.append(probs[idx1:].sum())
+                    if not self.det_feature.reverse
+                    else bin_probs.append(
+                        probs[idx1 : self._get_threshold_index(e, low_bound, step_width, boundary_offset)].sum()
+                    )
+                )
+        s = 0
+
+        def weight_function(x: Any) -> int | Any:
+            return x + 1
+
+        w = 0
+        for i, p in enumerate(bin_probs):
+            if not self.det_feature.reverse:
+                s += weight_function(i) * p
+            else:
+                s += weight_function(len(bin_probs) - i) * p
+            w += weight_function(i)
+        return s / w
+
+    def _deterioration_index(self, X: np.ndarray) -> float:
+        """
+        Obtain deterioration index
+        X - the random sample of measurements
+        low_bound/up_nbound - the boundary values of the measurement
+        n_samples - number of bins to use for probability calculation. default is 2000.
+        plot_title - the title of the plot, if generates plot. default is empty string
+        is_discrete - whether the random sample is discrete. NB: this might be overwritten based on bandwidth learned.
+            Small bandwidths will always bring out pulse like PDFs. default is False.
+        prev_discrete_value_offset - the difference between the threshold and the previous legitimate value. default is 1.
+        weight_sum_steps - the number of bins for weighted sum of k-step cutoffs, default is 20
+        reverse - for calculating p(X<threshold), i.e., the smaller the measure value the more severe a patient is.
+            default is False
+        bandwidth - default bandwidth to use if not search bandwidth, default is 1
+        kernel - the kernel to use for KDE, default is gaussian.
+        optimise_bandwidth - whether to use grid search to find optimal bandwidth for X. default is True
+        do_plot - whether to generate plots, default is True
+        """
+
+        # estimate density function
+        kde = self._kde_estimate(X)
+
+        # automatically adjust on boundaries
+        _, adjusted_min = self._search_for_zero_mass_index(kde, self.min_det_val)
+        boundary_offset = self.min_det_val - adjusted_min
+
+        low_bound = self.min_det_val - boundary_offset
+        up_bound = self.max_det_val + boundary_offset
+
+        # use learned KDE estimator to get probability
+        bins = np.linspace(low_bound, up_bound, self.n_samples)
+        kd_vals = kde.score_samples(bins.reshape(-1, 1))  # Get PDF values for each x
+        step_width = (up_bound - low_bound) / self.n_samples  # get the step
+        probs = np.exp(kd_vals) * step_width  # get the approximate prob at each point using the integral of the PDF
+
+        # severity quantification
+        if self.det_feature.reverse:
+            s = low_bound
+            e = min(self.det_feature.threshold, up_bound)
+        else:
+            s = max(self.det_feature.threshold, low_bound)
+            e = up_bound
+
+        # stepped quantification that considers higher/lower the value, more severe the patients are
+        sqs = self._stepped_severity(probs, s, e, low_bound, step_width, boundary_offset)
+
+        return round(sqs, 6)
+
+    def _obtain_da_index(self, group: str, score_bounds: tuple[float, float]) -> tuple[int, float]:
+        """
+        Calculates the Deterioration Allocation Index (DAI) for a given cohort.
+
+        Args:
+            df: The DataFrame containing the data.
+            cohort_name: The name of the cohort.
+            scores: The list of scores corresponding to the DataFrame rows.
+            score_bounds: The lower and upper bounds for the scores to be considered.
+            det_feature: The col to be used for DAI calculation.
+            det_threshold: The threshold value for the deterioration index.
+            det_label: The label for the deterioration index.
+            det_feature_func: A function to apply to each row to extract the col value.
+            det_list_lengths: A list of acceptable lengths for the det_list, in descending order.
+            min_det_v: The minimum value for the deterioration index.
+            max_det_v: The maximum value for the deterioration index.
+            is_discrete: Whether the col is discrete.
+            reverse: Whether to reverse the order of the col values.
+            optimise_bandwidth: Whether to search for the optimal bandwidth.
+
+        Returns:
+            A tuple containing:
+                - int: The length of the det_list.
+                - float: The k-step value from the deterioration index calculation.
+
+        Raises:
+            UserWarning: If the number of samples is sub-optimal or insufficient for DAI calculation.
+
+        """
+        lb, ub = score_bounds
+
+        det_list = []
+        i = 0
+
+        group_indices = self.cohort[self.group_col].isin(
+            self.groups[group] if isinstance(self.groups[group], list) else [self.groups[group]]
+        )
+        df = self.cohort[group_indices]
+        for idx, r in df.iterrows():
+            p = self.group_scores[group][i]
+            if lb <= p <= ub:
+                if self.det_feature.func is not None:
+                    det_list.append(self.det_feature.func(r))
+                else:
+                    det_list.append(r[self.det_feature.col])
+            i += 1
+        for det_list_length in self.det_list_lengths:
+            if len(det_list) >= det_list_length:
+                if det_list_length != self.det_list_lengths[0]:
+                    warnings.warn(
+                        f"Sub-optimal number of samples for DAI calculation, {len(det_list)} is acceptable but {self.det_list_lengths[0]} is preferred."
+                    )
+                break
+        else:
+            warnings.warn(
+                f"Insufficient number of samples for DAI calculation, {len(det_list)} < {self.det_list_lengths[-1]}."
+            )
+            return len(det_list), 0.0
+
+        X = np.array(det_list)
+        di_ret = self._deterioration_index(X[~np.isnan(X)].reshape(-1, 1))
+        return len(det_list), di_ret
+
+    def _get_group_ksteps(self, group) -> list[tuple[float, int, float]]:
+        def process_step(s):
+            return (s, *self._obtain_da_index(group, self.step_score_bounds[s]))
+
+        ret = Parallel(n_jobs=self.n_jobs)(
+            delayed(process_step)(s)
+            for s in tqdm(self.step_scores, desc=f"Calculating k-steps for '{group}' group", position=1, leave=False)
+        )
+        return np.array(ret)
+
+    def _evaluate_group_pair(self, reference_group: str, other_group: str, rerun: bool, rerun_reference: bool):
+        if rerun_reference or reference_group not in self.group_ksteps.keys():
+            self.group_ksteps[reference_group] = self._get_group_ksteps(reference_group)
+        if rerun or other_group not in self.group_ksteps.keys():
+            self.group_ksteps[other_group] = self._get_group_ksteps(other_group)
+
+    def _check_group_pair(self, reference_group: str, other_group: str):
+        assert (
+            reference_group in self.groups.keys()
+        ), f"Invalid group name provided for reference_group. Valid group names are {self.groups.keys().to_list()}"
+        assert (
+            other_group in self.groups.keys()
+        ), f"Invalid group name provided for other_group. Valid group names are {self.groups.keys().to_list()}"
+
+    def _evaluate_group_pair_by_predictions(
+        self, predictions_col: str, reference_group: str, other_group: str, rerun: bool, rerun_reference: bool
+    ):
+        if rerun_reference or reference_group not in self.group_scores.keys():
+            self.group_scores[reference_group] = self.cohort[self.cohort[self.group_col] == reference_group][
+                predictions_col
+            ].to_numpy()
+        if rerun or other_group not in self.group_scores.keys():
+            self.group_scores[other_group] = self.cohort[self.cohort[self.group_col] == other_group][
+                predictions_col
+            ].to_numpy()
+        self._evaluate_group_pair(reference_group, other_group, rerun, rerun_reference)
+
+    def evaluate_group_pair_by_predictions(
+        self,
+        predictions_col: str,
+        reference_group: str,
+        other_group: str,
+        rerun: bool = True,
+        n_jobs: int = -1,
+    ):
+        self.n_jobs = n_jobs
+        self._check_group_pair(reference_group, other_group)
+        self._evaluate_group_pair_by_predictions(predictions_col, reference_group, other_group, rerun, rerun)
+        self.group_ratios[(reference_group, other_group)], self.group_figures[(reference_group, other_group)] = (
+            self.get_da_curve(reference_group, other_group)
+        )
+        return self.group_ratios[(reference_group, other_group)], self.group_figures[(reference_group, other_group)]
+
+    def _get_scores(self, group: str, models: list[ProbabilisticModel], feature_list: list[str]) -> np.ndarray:
+        """
+        Computes the mean predicted probabilities for a list of models.
+
+        Args:
+            group: The group name for which to compute the predicted probabilities
+            models: A list of trained model objects that have a `predict_proba` method.
+            feature_list: A list of column names in `df` to be used as features for prediction.
+
+        Returns:
+            An array of mean predicted probabilities for the positive class.
+        """
+        group_indices = self.cohort[self.group_col].isin(
+            self.groups[group] if isinstance(self.groups[group], list) else [self.groups[group]]
+        )
+        predicted_probs = np.array(
+            [m.predict_proba(self.cohort[group_indices][feature_list].to_numpy()) for m in models]
+        )
+        return predicted_probs[:, :, 1].mean(axis=0)
+
+    def _evaluate_group_pair_by_models(
+        self,
+        models: list[ProbabilisticModel],
+        feature_list: list[str],
+        reference_group: str,
+        other_group: str,
+        rerun: bool,
+        rerun_reference: bool,
+    ):
+        if rerun_reference or reference_group not in self.group_scores.keys():
+            self.group_scores[reference_group] = self._get_scores(reference_group, models, feature_list)
+        if rerun or other_group not in self.group_scores.keys():
+            self.group_scores[other_group] = self._get_scores(other_group, models, feature_list)
+        self._evaluate_group_pair(reference_group, other_group, rerun, rerun_reference)
+
+    def evaluate_group_pair_by_models(
+        self,
+        models: list[ProbabilisticModel] | ProbabilisticModel,
+        feature_list: list[str],
+        reference_group: str,
+        other_group: str,
+        rerun: bool = True,
+        n_jobs: int = -1,
+    ):
+        self.n_jobs = n_jobs
+        self._check_group_pair(reference_group, other_group)
+        models = models if isinstance(models, list) else [models]
+        self._evaluate_group_pair_by_models(models, feature_list, reference_group, other_group, rerun, rerun)
+        self.group_ratios[(reference_group, other_group)], self.group_figures[(reference_group, other_group)] = (
+            self.get_da_curve(reference_group, other_group)
+        )
+        return self.group_ratios[(reference_group, other_group)], self.group_figures[(reference_group, other_group)]
+
+    def _check_reference_group(self, reference_group: str) -> None:
+        assert (
+            reference_group in self.groups.keys()
+        ), f"Invalid group name provided for reference_group. Valid group names are {self.groups.keys().to_list()}"
+
+    def evaluate_all_groups_by_models(
+        self,
+        models: list[ProbabilisticModel] | ProbabilisticModel,
+        feature_list: list[str],
+        reference_group: str,
+        rerun: bool = True,
+        n_jobs: int = -1,
+    ):
+        self.n_jobs = n_jobs
+        self._check_reference_group(reference_group)
+        models = models if isinstance(models, list) else [models]
+        pbar = tqdm(
+            [*(self.groups.keys() - {reference_group})],
+            desc="Evaluating group",
+            total=len(self.groups) - 1,
+            position=0,
+        )
+        for group in pbar:
+            pbar.set_description(f"Evaluating {group} group")
+            self._evaluate_group_pair_by_models(models, feature_list, reference_group, group, rerun, False)
+            self.group_ratios[(reference_group, group)], self.group_figures[(reference_group, group)] = (
+                self.get_da_curve(reference_group, group)
+            )
+
+    def evaluate_all_groups_by_predictions(
+        self, predictions_col: str, reference_group: str, rerun: bool = True, n_jobs: int = -1
+    ):
+        self.n_jobs = n_jobs
+        self._check_reference_group(reference_group)
+        for group in tqdm(
+            [*(self.groups.keys() - {reference_group})],
+            desc="Evaluating group",
+            total=len(self.groups) - 1,
+            position=0,
+        ):
+            self._evaluate_group_pair_by_predictions(predictions_col, reference_group, group, rerun, False)
+            self.group_ratios[(reference_group, group)], self.group_figures[(reference_group, group)] = (
+                self.get_da_curve(reference_group, group)
+            )
+
+    def _area_under_curve(self, w_data: np.ndarray) -> tuple[float, float]:
+        """
+        calculate the area under curve - do NOT do interpolation
+        """
+        prev = None
+        area = 0.0
+        decision_area = 0.0
+        n_points = 0
+        for r in w_data:
+            if prev is not None:
+                a = (r[1] + prev[1]) * (r[0] - prev[0]) / 2  # * r[2]
+                area += a
+                if prev[0] >= self.decision_boundary:
+                    decision_area += a
+                    n_points += 1
+            prev = r
+
+        if prev is not None:
+            a = (r[1] + prev[1]) * (r[0] - prev[0]) / 2  # * r[2]
+            area += a
+            if prev[0] >= self.decision_boundary:
+                decision_area += a
+                n_points += 1
+
+        return area, decision_area
+
+    def _vis_da_indices(self, data: np.ndarray, label: str) -> tuple[float, float, np.ndarray]:
+        """
+        plot dot-line for approximating a DA curve
+        """
+        w_data = data[np.where(data[:, 1] > 0)][:, [0, 2, 1]]
+        a, decision_area = self._area_under_curve(w_data)
+        plt.plot(w_data[:, 0], w_data[:, 1], "-")
+        plt.plot(w_data[:, 0], w_data[:, 1], "o", label=label)
+        return a, decision_area, w_data
+
+    def _calc_ratios(self, a1: float, a2: float, da1: float, da2: float) -> dict[str, float | str]:
+        ratio = (a2 - a1) / a1
+        decision_ratio = ((da2 - da1) / da1) if da1 != 0 else "N/A"
+        return {"Full": ratio, "Decision": decision_ratio}
+
+    def get_da_curve(
+        self,
+        reference_group: str,
+        other_group: str,
+    ) -> tuple[dict[str, float | str], plt.Figure]:
+        """
+        do DA curve visualisation
+        """
+
+        self._check_group_pair(reference_group, other_group)
+        d1 = self.group_ksteps[reference_group]
+        d2 = self.group_ksteps[other_group]
+
+        # do some clearning: remove those empty points
+        d1 = np.delete(d1, np.where(d1[:, 1] == 0), axis=0)
+        d2 = np.delete(d2, np.where(d2[:, 1] == 0), axis=0)
+        d1 = np.delete(d1, np.where(d1[:, 2] == 0), axis=0)
+        d2 = np.delete(d2, np.where(d2[:, 2] == 0), axis=0)
+        # make two datasets even in terms of max x val
+        x_min = min(np.max(d1[:, 0]), np.max(d2[:, 0]))
+        d1 = np.delete(d1, np.where(d1[:, 0] > x_min), axis=0)
+        d2 = np.delete(d2, np.where(d2[:, 0] > x_min), axis=0)
+
+        # automatically set x/y limits for better viz
+        # x_max = max(np.max(d1[:, 0]), np.max(d2[:, 0]))
+        y_max = max(np.max(d1[:, 2]), np.max(d2[:, 2]))
+
+        plt.xlim(0, x_min * 1.05)
+        plt.ylim(0, y_max * 1.05)
+
+        # do plots
+        a1, da1, _ = self._vis_da_indices(d1, reference_group)
+        a2, da2, _ = self._vis_da_indices(d2, other_group)
+
+        ratios = self._calc_ratios(a1, a2, da1, da2)
+
+        # figure finishing up
+        plt.xlabel(self.model_name)
+        plt.ylabel(
+            f"{self.det_feature.label} >= {self.det_feature.threshold}"
+            if not self.det_feature.reverse
+            else f"{self.det_feature.label} <= {self.det_feature.threshold}"
+        )
+
+        # plot decision region
+        plt.plot([self.decision_boundary, self.decision_boundary], [0, 1], "--", lw=0.8, color="g")
+        plt.axvspan(self.decision_boundary, 1, facecolor="b", alpha=0.1)
+
+        plt.legend(loc="best")
+
+        fig = plt.gcf()
+        plt.close()
+
+        return ratios, fig
+
+    def present_results(self, reference_group, other_group):
+        ratios, fig = (
+            self.group_ratios[(reference_group, other_group)],
+            self.group_figures[(reference_group, other_group)],
+        )
+        print(f"Reference group: {reference_group}, Comparison group: {other_group}")
+        print(f"Ratios: {ratios}")
+        display(fig)
+
+    def present_all_results(self):
+        for group_pair in self.group_figures.keys():
+            self.present_results(*group_pair)
+
+    def get_group_ratios(self, reference_group, other_group):
+        return self.group_ratios[(reference_group, other_group)]
+
+    def get_group_figures(self, reference_group, other_group):
+        return self.group_figures[(reference_group, other_group)]
+
+    def get_all_ratios(self):
+        df = pd.DataFrame(self.group_ratios).T
+        df.index = pd.MultiIndex.from_tuples(df.index, names=["Reference", "Comparison"])
+        return df
+
+    def get_all_figures(self):
+        return self.group_figures
