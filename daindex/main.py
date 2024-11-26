@@ -36,12 +36,29 @@ class DeteriorationFeature(object):
         self.reverse = reverse
 
 
+class Group(object):
+    def __init__(self, name: str, col: str, definition: Any, get_group: Callable = None):
+        self.name = name
+        self.col = col
+        if not isinstance(definition, list):
+            self.definition = [definition]
+        else:
+            self.definition = definition
+        self._get_group = get_group
+
+    def get_group(self, cohort: pd.DataFrame) -> pd.DataFrame:
+        return (
+            self._get_group(self, cohort)
+            if self._get_group is not None
+            else cohort[cohort[self.col].isin(self.definition)]
+        )
+
+
 class DAIndex(object):
     def __init__(
         self,
         cohort: pd.DataFrame,
-        group_col: str,
-        groups: dict[str, Any],
+        groups: Group | list[Group],
         det_feature: DeteriorationFeature,
         steps: int = 50,
         score_margin_multiplier: float = 5.0,
@@ -55,10 +72,7 @@ class DAIndex(object):
         model_name: str = None,
         decision_boundary: float = 0.5,
     ):
-        self.cohort = cohort
-        self.group_col = group_col
-        self.groups = groups
-
+        self.setup_groups(groups, cohort)
         self.setup_deterioration_feature(det_feature)
         self.setup_daauc_params(
             steps,
@@ -79,6 +93,12 @@ class DAIndex(object):
         self.group_ksteps = {}
         self.group_ratios = {}
         self.group_figures = {}
+        self.issues = []
+
+    def setup_groups(self, groups: Group | list[Group], cohort: pd.DataFrame):
+        if not isinstance(groups, list):
+            groups = [groups]
+        self.groups = {g.name: g.get_group(cohort) for g in groups}
 
     def setup_daauc_params(
         self,
@@ -113,12 +133,8 @@ class DAIndex(object):
 
     def setup_deterioration_feature(self, det_feature: DeteriorationFeature):
         self.det_feature = det_feature
-        self.min_det_val = self.cohort[self.cohort[self.group_col].isin(self.groups.values())][
-            self.det_feature.col
-        ].min()
-        self.max_det_val = self.cohort[self.cohort[self.group_col].isin(self.groups.values())][
-            self.det_feature.col
-        ].max()
+        self.min_det_val = min(g[self.det_feature.col].min() for g in self.groups.values())
+        self.max_det_val = max(g[self.det_feature.col].max() for g in self.groups.values())
 
     def _gridsearch_bandwidth(self, X: np.ndarray) -> float:
         """
@@ -304,11 +320,9 @@ class DAIndex(object):
 
         det_list = []
         i = 0
+        sub_opt = False
 
-        group_indices = self.cohort[self.group_col].isin(
-            self.groups[group] if isinstance(self.groups[group], list) else [self.groups[group]]
-        )
-        df = self.cohort[group_indices]
+        df = self.groups[group]
         for idx, r in df.iterrows():
             p = self.group_scores[group][i]
             if lb <= p <= ub:
@@ -320,29 +334,34 @@ class DAIndex(object):
         for det_list_length in self.det_list_lengths:
             if len(det_list) >= det_list_length:
                 if det_list_length != self.det_list_lengths[0]:
-                    warnings.warn(
-                        f"Sub-optimal number of samples for DAI calculation, {len(det_list)} is acceptable but {self.det_list_lengths[0]} is preferred."
-                    )
+                    sub_opt = True
                 break
         else:
-            warnings.warn(
-                f"Insufficient number of samples for DAI calculation, {len(det_list)} < {self.det_list_lengths[-1]}."
-            )
-            return len(det_list), 0.0
+            return len(det_list), 0.0, False, True
 
         X = np.array(det_list)
         di_ret = self._deterioration_index(X[~np.isnan(X)].reshape(-1, 1))
-        return len(det_list), di_ret
+        return len(det_list), di_ret, sub_opt, False
 
     def _get_group_ksteps(self, group) -> list[tuple[float, int, float]]:
         def process_step(s):
-            return (s, *self._obtain_da_index(group, self.step_score_bounds[s]))
+            length, di_ret, sub_opt, failed = self._obtain_da_index(group, self.step_score_bounds[s])
+            return (s, length, di_ret, sub_opt, failed)
 
         ret = Parallel(n_jobs=self.n_jobs)(
             delayed(process_step)(s)
             for s in tqdm(self.step_scores, desc=f"Calculating k-steps for '{group}' group", position=1, leave=False)
         )
-        return np.array(ret)
+        sub_opt_list = ", ".join([f"{s[0]}: {s[1]}" for s in ret if s[3]])
+        failed_list = ", ".join([f"{s[0]}: {s[1]}" for s in ret if s[4]])
+        if sub_opt_list or failed_list:
+            message = f"\nIssues were encountered during the {group} group calculation:"
+            if sub_opt_list:
+                message += f"\nThere are a sub-optimal number of samples for these scores: {sub_opt_list}"
+            if failed_list:
+                message += f"\nThere are too few samples for these scores: {failed_list}"
+            warnings.warn(message)
+        return np.array([(s[0], s[1], s[2]) for s in ret if not s[4]])
 
     def _evaluate_group_pair(self, reference_group: str, other_group: str, rerun: bool, rerun_reference: bool):
         if rerun_reference or reference_group not in self.group_ksteps.keys():
@@ -362,13 +381,9 @@ class DAIndex(object):
         self, predictions_col: str, reference_group: str, other_group: str, rerun: bool, rerun_reference: bool
     ):
         if rerun_reference or reference_group not in self.group_scores.keys():
-            self.group_scores[reference_group] = self.cohort[self.cohort[self.group_col] == reference_group][
-                predictions_col
-            ].to_numpy()
+            self.group_scores[reference_group] = self.groups[reference_group][predictions_col].to_numpy()
         if rerun or other_group not in self.group_scores.keys():
-            self.group_scores[other_group] = self.cohort[self.cohort[self.group_col] == other_group][
-                predictions_col
-            ].to_numpy()
+            self.group_scores[other_group] = self.groups[other_group][predictions_col].to_numpy()
         self._evaluate_group_pair(reference_group, other_group, rerun, rerun_reference)
 
     def evaluate_group_pair_by_predictions(
@@ -399,12 +414,7 @@ class DAIndex(object):
         Returns:
             An array of mean predicted probabilities for the positive class.
         """
-        group_indices = self.cohort[self.group_col].isin(
-            self.groups[group] if isinstance(self.groups[group], list) else [self.groups[group]]
-        )
-        predicted_probs = np.array(
-            [m.predict_proba(self.cohort[group_indices][feature_list].to_numpy()) for m in models]
-        )
+        predicted_probs = np.array([m.predict_proba(self.groups[group][feature_list].to_numpy()) for m in models])
         return predicted_probs[:, :, 1].mean(axis=0)
 
     def _evaluate_group_pair_by_models(
@@ -539,11 +549,6 @@ class DAIndex(object):
         d1 = self.group_ksteps[reference_group]
         d2 = self.group_ksteps[other_group]
 
-        # do some clearning: remove those empty points
-        d1 = np.delete(d1, np.where(d1[:, 1] == 0), axis=0)
-        d2 = np.delete(d2, np.where(d2[:, 1] == 0), axis=0)
-        d1 = np.delete(d1, np.where(d1[:, 2] == 0), axis=0)
-        d2 = np.delete(d2, np.where(d2[:, 2] == 0), axis=0)
         # make two datasets even in terms of max x val
         x_min = min(np.max(d1[:, 0]), np.max(d2[:, 0]))
         d1 = np.delete(d1, np.where(d1[:, 0] > x_min), axis=0)

@@ -1,3 +1,3 @@
-from .main import DAIndex, DeteriorationFeature
+from .main import DAIndex, DeteriorationFeature, Group
 
-__all__ = ["DAIndex", "DeteriorationFeature"]
+__all__ = ["DAIndex", "DeteriorationFeature", "Group"]
