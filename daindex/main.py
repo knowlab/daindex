@@ -17,6 +17,20 @@ class ProbabilisticModel(Protocol):
 
 
 class DeteriorationFeature(object):
+    """
+    Class to define the feature upon which to calculate the DA Index.
+    This is passed into the `DAIndex` class.
+
+    Args:
+        col: The column name in the cohort DataFrame that contains the feature.
+        threshold: The threshold value for the deterioration index.
+        label: The label for the deterioration index.
+        func: An optional function to apply to each row to extract the feature value.
+        is_discrete: Whether the feature is discrete.
+        prev_discrete_value_offset: The difference between the threshold and the previous legitimate value.
+        reverse: For calculating p(X<threshold), i.e., the smaller the measure value the more severe a patient is.
+    """
+
     def __init__(
         self,
         col: str,
@@ -37,10 +51,50 @@ class DeteriorationFeature(object):
 
 
 class Group(object):
-    def __init__(self, name: str, col: str, definition: Any, get_group: Callable = None):
+    """
+    Class to define a sub-group within the cohort upon which to calculate the DA Index.
+    A list of these should be passed into the `groups` parameter of the `DAIndex` class.
+
+    Args:
+        name: The name of the group in the desired formatting to display on plots and use as a key to extract results etc.
+        col: The column name in the cohort DataFrame that contains the group definition.
+        definition: The value(s) in the column that define the group.
+            E.g. could be a list of values, a single value, string, number, etc.
+            If not provided, defaults to the name.
+        get_group: This is an optional argument to allow passing in of a more complex function
+            that returns the group DataFrame.
+            If not provided, the group DataFrame is obtained by filtering the cohort DataFrame
+            by the `col` and `definition`.
+
+    Methods:
+        get_group: Returns the group DataFrame by operating on the cohort DataFrame.
+
+    Examples:
+        >>> cohort = pd.DataFrame({"group_col": ["group_1", "group_2", "group_1", "group_3"]})
+        >>> group = Group("Group 1", "group_col", "group_1")
+        >>> group.get_group(cohort)
+
+          group_col
+        0   group_1
+        2   group_1
+
+        >>> cohort = pd.DataFrame({"sex": ["M", "F", "m", "F", "f", "female"]})
+        >>> group = Group("Female", "sex", ["F", "f", "female"])
+        >>> group.get_group(cohort)
+
+               sex
+        1   F
+        3   F
+        4   f
+        5   female
+    """
+
+    def __init__(self, name: str, col: str = None, definition: Any = None, get_group: Callable = None):
         self.name = name
         self.col = col
-        if not isinstance(definition, list):
+        if definition is None:
+            self.definition = [name]
+        elif not isinstance(definition, list):
             self.definition = [definition]
         else:
             self.definition = definition
@@ -55,11 +109,61 @@ class Group(object):
 
 
 class DAIndex(object):
+    """
+    Class to calculate the Deterioration Allocation Index (DAI) for a cohort of patients.
+    The DAI is a measure of the deterioration of a patient's health over time, based on a given feature.
+    We compare the DAI between two groups relative to a given model's predictions. This then gives us
+    a measure of how fair the model's predictions are across the two groups.
+
+    This class should be instantiated first with a `DetertiorationFeature` object and a list of `Group` objects.
+    The `evaluate_group_pair_by_predictions` or `evaluate_group_pair_by_models` methods can then be called to
+    calculate the DAI for a pair of groups. Alternatively, the `evaluate_all_groups_by_predictions` or
+    `evaluate_all_groups_by_models` methods can be called to calculate the DAI for all groups relative to a
+    single reference group.
+
+    The results can be accessed using the `get_group_ratios` and `get_group_figures` methods, or printed using
+    the `present_results` and `present_all_results` methods.
+
+    Args:
+        cohort: The DataFrame containing the data for the cohort.
+        groups: A list of `Group` objects representing the sub-groups within the cohort.
+        det_feature: A `DeteriorationFeature` object representing the feature upon which to calculate the DAI.
+        group_col: Optional column name in the cohort DataFrame that contains the group definition.
+            Specifying this overrides the `col` attribute of the `Group` objects.
+        steps: The number of steps to use for the DAI calculation.
+        score_margin_multiplier: The multiplier to use for the score margin.
+        det_list_lengths: A list of acceptable lengths for the det_list, in descending order.
+        bandwidth: The bandwidth to use for the KDE.
+        optimise_bandwidth: Whether to search for the optimal bandwidth.
+        kernel: The kernel to use for the KDE.
+        n_samples: The number of samples to use for the KDE.
+        weight_sum_steps: The number of bins for the weighted sum of k-step cutoffs.
+        n_jobs: The number of jobs to run in parallel.
+        model_name: The name of the model to use in the plots.
+        decision_boundary: The decision boundary for the DA curve.
+
+    Methods:
+        setup_groups: Set up the groups for the DAI calculation.
+        setup_daauc_params: Set up the parameters for the DAI calculation.
+        setup_deterioration_feature: Set up the deterioration feature for the DAI calculation.
+        evaluate_group_pair_by_predictions: Calculate the DAI for a pair of groups based on model predictions.
+        evaluate_group_pair_by_models: Calculate the DAI for a pair of groups based on model objects.
+        evaluate_all_groups_by_predictions: Calculate the DAI for all groups relative to a single reference group based on model predictions.
+        evaluate_all_groups_by_models: Calculate the DAI for all groups relative to a single reference group based on model objects.
+        present_results: Print the DAI results for a pair of groups.
+        present_all_results: Print the DAI results for all group pairs.
+        get_group_ratios: Get the DAI ratios for a pair of groups.
+        get_group_figures: Get the DAI figures for a pair of groups.
+        get_all_ratios: Get the DAI ratios for all group pairs.
+        get_all_figures: Get the DAI figures for all group pairs.
+    """
+
     def __init__(
         self,
         cohort: pd.DataFrame,
         groups: Group | list[Group],
         det_feature: DeteriorationFeature,
+        group_col: str = None,
         steps: int = 50,
         score_margin_multiplier: float = 5.0,
         det_list_lengths: list[int] = [20, 10, 5],
@@ -72,7 +176,7 @@ class DAIndex(object):
         model_name: str = None,
         decision_boundary: float = 0.5,
     ):
-        self.setup_groups(groups, cohort)
+        self.setup_groups(groups, cohort, group_col)
         self.setup_deterioration_feature(det_feature)
         self.setup_daauc_params(
             steps,
@@ -95,9 +199,11 @@ class DAIndex(object):
         self.group_figures = {}
         self.issues = []
 
-    def setup_groups(self, groups: Group | list[Group], cohort: pd.DataFrame):
+    def setup_groups(self, groups: Group | list[Group], cohort: pd.DataFrame, group_col: str = None) -> None:
         if not isinstance(groups, list):
             groups = [groups]
+        if group_col is not None:
+            groups = [Group(g.name, group_col, g.definition, g.get_group) for g in groups]
         self.groups = {g.name: g.get_group(cohort) for g in groups}
 
     def setup_daauc_params(
@@ -111,7 +217,7 @@ class DAIndex(object):
         n_samples: int = 10000,
         weight_sum_steps: int = 10,
         n_jobs: int = -1,
-    ):
+    ) -> None:
         self.steps = steps
         self.score_margin_multiplier = score_margin_multiplier
         self.step_scores = np.linspace(0, 1, self.steps + 1)[1:] - 1 / (2 * self.steps)
@@ -131,7 +237,7 @@ class DAIndex(object):
         self.weight_sum_steps = weight_sum_steps
         self.n_jobs = n_jobs
 
-    def setup_deterioration_feature(self, det_feature: DeteriorationFeature):
+    def setup_deterioration_feature(self, det_feature: DeteriorationFeature) -> None:
         self.det_feature = det_feature
         self.min_det_val = min(g[self.det_feature.col].min() for g in self.groups.values())
         self.max_det_val = max(g[self.det_feature.col].max() for g in self.groups.values())
@@ -344,7 +450,7 @@ class DAIndex(object):
         return len(det_list), di_ret, sub_opt, False
 
     def _get_group_ksteps(self, group) -> list[tuple[float, int, float]]:
-        def process_step(s):
+        def process_step(s) -> tuple[float, int, float, bool, bool]:
             length, di_ret, sub_opt, failed = self._obtain_da_index(group, self.step_score_bounds[s])
             return (s, length, di_ret, sub_opt, failed)
 
@@ -363,13 +469,13 @@ class DAIndex(object):
             warnings.warn(message)
         return np.array([(s[0], s[1], s[2]) for s in ret if not s[4]])
 
-    def _evaluate_group_pair(self, reference_group: str, other_group: str, rerun: bool, rerun_reference: bool):
+    def _evaluate_group_pair(self, reference_group: str, other_group: str, rerun: bool, rerun_reference: bool) -> None:
         if rerun_reference or reference_group not in self.group_ksteps.keys():
             self.group_ksteps[reference_group] = self._get_group_ksteps(reference_group)
         if rerun or other_group not in self.group_ksteps.keys():
             self.group_ksteps[other_group] = self._get_group_ksteps(other_group)
 
-    def _check_group_pair(self, reference_group: str, other_group: str):
+    def _check_group_pair(self, reference_group: str, other_group: str) -> None:
         assert (
             reference_group in self.groups.keys()
         ), f"Invalid group name provided for reference_group. Valid group names are {self.groups.keys().to_list()}"
@@ -484,12 +590,14 @@ class DAIndex(object):
     ):
         self.n_jobs = n_jobs
         self._check_reference_group(reference_group)
-        for group in tqdm(
+        pbar = tqdm(
             [*(self.groups.keys() - {reference_group})],
             desc="Evaluating group",
             total=len(self.groups) - 1,
             position=0,
-        ):
+        )
+        for group in pbar:
+            pbar.set_description(f"Evaluating {group} group")
             self._evaluate_group_pair_by_predictions(predictions_col, reference_group, group, rerun, False)
             self.group_ratios[(reference_group, group)], self.group_figures[(reference_group, group)] = (
                 self.get_da_curve(reference_group, group)
