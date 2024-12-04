@@ -49,6 +49,9 @@ class DeteriorationFeature(object):
         self.prev_discrete_value_offset = prev_discrete_value_offset
         self.reverse = reverse
 
+    def __repr__(self):
+        return f"DeteriorationFeature(col='{self.col}', threshold={self.threshold}, label='{self.label}')"
+
 
 class Group(object):
     """
@@ -61,18 +64,19 @@ class Group(object):
         definition: The value(s) in the column that define the group.
             E.g. could be a list of values, a single value, string, number, etc.
             If not provided, defaults to the name.
+        det_threshold: The threshold value for the deterioration index, overriding the `threshold` attribute of the `DeteriorationFeature`.
         get_group: This is an optional argument to allow passing in of a more complex function
             that returns the group DataFrame.
             If not provided, the group DataFrame is obtained by filtering the cohort DataFrame
             by the `col` and `definition`.
 
     Methods:
-        get_group: Returns the group DataFrame by operating on the cohort DataFrame.
+        Call the object to return the group DataFrame by operating on the cohort DataFrame.
 
     Examples:
         >>> cohort = pd.DataFrame({"group_col": ["group_1", "group_2", "group_1", "group_3"]})
         >>> group = Group("Group 1", "group_col", "group_1")
-        >>> group.get_group(cohort)
+        >>> group(cohort)
 
           group_col
         0   group_1
@@ -80,7 +84,7 @@ class Group(object):
 
         >>> cohort = pd.DataFrame({"sex": ["M", "F", "m", "F", "f", "female"]})
         >>> group = Group("Female", "sex", ["F", "f", "female"])
-        >>> group.get_group(cohort)
+        >>> group(cohort)
 
                sex
         1   F
@@ -89,7 +93,9 @@ class Group(object):
         5   female
     """
 
-    def __init__(self, name: str, col: str = None, definition: Any = None, get_group: Callable = None):
+    def __init__(
+        self, name: str, col: str = None, definition: Any = None, det_threshold=None, get_group: Callable = None
+    ):
         self.name = name
         self.col = col
         if definition is None:
@@ -98,9 +104,13 @@ class Group(object):
             self.definition = [definition]
         else:
             self.definition = definition
+        self.det_threshold = det_threshold
         self._get_group = get_group
 
-    def get_group(self, cohort: pd.DataFrame) -> pd.DataFrame:
+    def __repr__(self):
+        return f"Group(name='{self.name}', col='{self.col}', definition={self.definition})"
+
+    def __call__(self, cohort: pd.DataFrame) -> pd.DataFrame:
         return (
             self._get_group(self, cohort)
             if self._get_group is not None
@@ -204,7 +214,7 @@ class DAIndex(object):
             groups = [groups]
         if group_col is not None:
             groups = [Group(g.name, group_col, g.definition, g.get_group) for g in groups]
-        self.groups = {g.name: g.get_group(cohort) for g in groups}
+        self.groups = {g.name: g for g in groups}
 
     def setup_daauc_params(
         self,
@@ -239,8 +249,8 @@ class DAIndex(object):
 
     def setup_deterioration_feature(self, det_feature: DeteriorationFeature) -> None:
         self.det_feature = det_feature
-        self.min_det_val = min(g[self.det_feature.col].min() for g in self.groups.values())
-        self.max_det_val = max(g[self.det_feature.col].max() for g in self.groups.values())
+        self.min_det_val = min(g(self.cohort)[self.det_feature.col].min() for g in self.groups.values())
+        self.max_det_val = max(g(self.cohort)[self.det_feature.col].max() for g in self.groups.values())
 
     def _gridsearch_bandwidth(self, X: np.ndarray) -> float:
         """
@@ -345,7 +355,7 @@ class DAIndex(object):
             w += weight_function(i)
         return s / w
 
-    def _deterioration_index(self, X: np.ndarray) -> float:
+    def _deterioration_index(self, X: np.ndarray, group: str) -> float:
         """
         Obtain deterioration index
         X - the random sample of measurements
@@ -381,11 +391,12 @@ class DAIndex(object):
         probs = np.exp(kd_vals) * step_width  # get the approximate prob at each point using the integral of the PDF
 
         # severity quantification
+        det_threshold = self.groups[group].det_threshold or self.det_feature.threshold
         if self.det_feature.reverse:
             s = low_bound
-            e = min(self.det_feature.threshold, up_bound)
+            e = min(det_threshold, up_bound)
         else:
-            s = max(self.det_feature.threshold, low_bound)
+            s = max(det_threshold, low_bound)
             e = up_bound
 
         # stepped quantification that considers higher/lower the value, more severe the patients are
@@ -428,7 +439,7 @@ class DAIndex(object):
         i = 0
         sub_opt = False
 
-        df = self.groups[group]
+        df = self.groups[group](self.cohort)
         for idx, r in df.iterrows():
             p = self.group_scores[group][i]
             if lb <= p <= ub:
@@ -446,7 +457,7 @@ class DAIndex(object):
             return len(det_list), 0.0, False, True
 
         X = np.array(det_list)
-        di_ret = self._deterioration_index(X[~np.isnan(X)].reshape(-1, 1))
+        di_ret = self._deterioration_index(X[~np.isnan(X)].reshape(-1, 1), group)
         return len(det_list), di_ret, sub_opt, False
 
     def _get_group_ksteps(self, group) -> list[tuple[float, int, float]]:
@@ -487,9 +498,9 @@ class DAIndex(object):
         self, predictions_col: str, reference_group: str, other_group: str, rerun: bool, rerun_reference: bool
     ):
         if rerun_reference or reference_group not in self.group_scores.keys():
-            self.group_scores[reference_group] = self.groups[reference_group][predictions_col].to_numpy()
+            self.group_scores[reference_group] = self.groups[reference_group](self.cohort)[predictions_col].to_numpy()
         if rerun or other_group not in self.group_scores.keys():
-            self.group_scores[other_group] = self.groups[other_group][predictions_col].to_numpy()
+            self.group_scores[other_group] = self.groups[other_group](self.cohort)[predictions_col].to_numpy()
         self._evaluate_group_pair(reference_group, other_group, rerun, rerun_reference)
 
     def evaluate_group_pair_by_predictions(
@@ -520,7 +531,9 @@ class DAIndex(object):
         Returns:
             An array of mean predicted probabilities for the positive class.
         """
-        predicted_probs = np.array([m.predict_proba(self.groups[group][feature_list].to_numpy()) for m in models])
+        predicted_probs = np.array(
+            [m.predict_proba(self.groups[group](self.cohort)[feature_list].to_numpy()) for m in models]
+        )
         return predicted_probs[:, :, 1].mean(axis=0)
 
     def _evaluate_group_pair_by_models(
@@ -677,10 +690,11 @@ class DAIndex(object):
 
         # figure finishing up
         plt.xlabel(self.model_name)
+        det_threshold = self.groups[reference_group].det_threshold or self.det_feature.threshold
         plt.ylabel(
-            f"{self.det_feature.label} >= {self.det_feature.threshold}"
+            f"{self.det_feature.label} >= {det_threshold}"
             if not self.det_feature.reverse
-            else f"{self.det_feature.label} <= {self.det_feature.threshold}"
+            else f"{self.det_feature.label} <= {det_threshold}"
         )
 
         # plot decision region
