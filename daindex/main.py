@@ -186,7 +186,8 @@ class DAIndex(object):
         model_name: str = None,
         decision_boundary: float = 0.5,
     ):
-        self.setup_groups(groups, cohort, group_col)
+        self.cohort = cohort
+        self.setup_groups(groups, group_col)
         self.setup_deterioration_feature(det_feature)
         self.setup_daauc_params(
             steps,
@@ -209,7 +210,7 @@ class DAIndex(object):
         self.group_figures = {}
         self.issues = []
 
-    def setup_groups(self, groups: Group | list[Group], cohort: pd.DataFrame, group_col: str = None) -> None:
+    def setup_groups(self, groups: Group | list[Group], group_col: str = None) -> None:
         if not isinstance(groups, list):
             groups = [groups]
         if group_col is not None:
@@ -690,7 +691,7 @@ class DAIndex(object):
 
         # figure finishing up
         plt.xlabel(self.model_name)
-        det_threshold = self.groups[reference_group].det_threshold or self.det_feature.threshold
+        det_threshold = self.groups[other_group].det_threshold or self.det_feature.threshold
         plt.ylabel(
             f"{self.det_feature.label} >= {det_threshold}"
             if not self.det_feature.reverse
