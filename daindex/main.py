@@ -60,10 +60,10 @@ class Group(object):
 
     Args:
         name: The name of the group in the desired formatting to display on plots and use as a key to extract results etc.
-        col: The column name in the cohort DataFrame that contains the group definition.
         definition: The value(s) in the column that define the group.
             E.g. could be a list of values, a single value, string, number, etc.
             If not provided, defaults to the name.
+        col: The column name in the cohort DataFrame that contains the group definition. Can be overriden by the `group_col` parameter of the `DAIndex` class.
         det_threshold: The threshold value for the deterioration index, overriding the `threshold` attribute of the `DeteriorationFeature`.
         get_group: This is an optional argument to allow passing in of a more complex function
             that returns the group DataFrame.
@@ -94,16 +94,16 @@ class Group(object):
     """
 
     def __init__(
-        self, name: str, col: str = None, definition: Any = None, det_threshold=None, get_group: Callable = None
+        self, name: str, definition: Any = None, col: str = None, det_threshold=None, get_group: Callable = None
     ):
         self.name = name
-        self.col = col
         if definition is None:
             self.definition = [name]
         elif not isinstance(definition, list):
             self.definition = [definition]
         else:
             self.definition = definition
+        self.col = col
         self.det_threshold = det_threshold
         self._get_group = get_group
 
@@ -111,6 +111,8 @@ class Group(object):
         return f"Group(name='{self.name}', col='{self.col}', definition={self.definition})"
 
     def __call__(self, cohort: pd.DataFrame) -> pd.DataFrame:
+        if not self.col:
+            raise ValueError("Group column name must be provided")
         return (
             self._get_group(self, cohort)
             if self._get_group is not None
@@ -215,6 +217,8 @@ class DAIndex(object):
             groups = [groups]
         if group_col is not None:
             groups = [Group(g.name, group_col, g.definition, g.get_group) for g in groups]
+        elif any(g.col is None for g in groups):
+            raise ValueError("group_col must be provided if any group objects do not have a col attribute")
         self.groups = {g.name: g for g in groups}
 
     def setup_daauc_params(
