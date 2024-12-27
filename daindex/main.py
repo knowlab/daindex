@@ -696,11 +696,12 @@ class DAIndex(object):
         # figure finishing up
         plt.xlabel(self.model_name)
         det_threshold = self.groups[other_group].det_threshold or self.det_feature.threshold
-        plt.ylabel(
-            f"{self.det_feature.label} >= {det_threshold}"
-            if not self.det_feature.reverse
-            else f"{self.det_feature.label} <= {det_threshold}"
-        )
+        inequality_string = ">=" if not self.det_feature.reverse else "<="
+        ylabel_string = f"{self.det_feature.label} {inequality_string} {det_threshold}"
+        det_threshold_reference = self.groups[reference_group].det_threshold or self.det_feature.threshold
+        if det_threshold != det_threshold_reference:
+            ylabel_string += f" for {other_group} group,\n{self.det_feature.label} {inequality_string} {det_threshold_reference} for {reference_group} group"
+        plt.ylabel(ylabel_string)
 
         # plot decision region
         plt.plot([self.decision_boundary, self.decision_boundary], [0, 1], "--", lw=0.8, color="g")
