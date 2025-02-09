@@ -75,7 +75,7 @@ class Group(object):
 
     Examples:
         >>> cohort = pd.DataFrame({"group_col": ["group_1", "group_2", "group_1", "group_3"]})
-        >>> group = Group("Group 1", "group_col", "group_1")
+        >>> group = Group("Group 1", "group_1", "group_col")
         >>> group(cohort)
 
           group_col
@@ -83,7 +83,7 @@ class Group(object):
         2   group_1
 
         >>> cohort = pd.DataFrame({"sex": ["M", "F", "m", "F", "f", "female"]})
-        >>> group = Group("Female", "sex", ["F", "f", "female"])
+        >>> group = Group("Female", ["F", "f", "female"], "sex")
         >>> group(cohort)
 
                sex
