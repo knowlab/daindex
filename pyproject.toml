@@ -78,7 +78,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["{{ cookiecutter.module_name }}"]
+known-first-party = ["daindex"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
