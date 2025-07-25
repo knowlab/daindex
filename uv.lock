@@ -505,7 +505,7 @@ wheels = [
 
 [[package]]
 name = "daindex"
-version = "0.7.0"
+version = "0.7.3"
 source = { editable = "." }
 dependencies = [
     { name = "joblib" },

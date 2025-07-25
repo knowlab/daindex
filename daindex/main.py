@@ -178,6 +178,12 @@ class DAIndex(object):
         get_group_figure: Get the DAI figure for a pair of groups.
         get_all_ratios: Get the DAI ratios for all group pairs.
         get_all_figures: Get the DAI figures for all group pairs.
+        get_group_step_samples: Get the number of samples used for each step for a specific group.
+        get_group_sub_optimal_steps: Get information about sub-optimal steps for a specific group.
+        get_group_failed_steps: Get information about failed steps for a specific group.
+        get_all_groups_step_samples: Get step sample information for all evaluated groups.
+        get_all_groups_sub_optimal_steps: Get sub-optimal step information for all evaluated groups.
+        get_all_groups_failed_steps: Get failed step information for all evaluated groups.
     """
 
     def __init__(
@@ -221,6 +227,10 @@ class DAIndex(object):
         self.group_ratios = {}
         self.group_figures = {}
         self.issues = []
+        # New attributes to track step information
+        self.group_sub_optimal_steps = {}  # Stores sub-optimal steps for each group
+        self.group_failed_steps = {}  # Stores failed steps for each group
+        self.group_step_samples = {}  # Stores sample counts for each step for each group
 
     def setup_groups(self, groups: Group | list[Group], group_col: str = None) -> None:
         if not isinstance(groups, list):
@@ -485,6 +495,16 @@ class DAIndex(object):
             delayed(process_step)(s)
             for s in tqdm(self.step_scores, desc=f"Calculating k-steps for '{group}' group", position=1, leave=False)
         )
+
+        # Store step information internally
+        sub_opt_steps = {s[0]: s[1] for s in ret if s[3]}
+        failed_steps = {s[0]: s[1] for s in ret if s[4]}
+        step_samples = {s[0]: s[1] for s in ret}
+
+        self.group_sub_optimal_steps[group] = sub_opt_steps
+        self.group_failed_steps[group] = failed_steps
+        self.group_step_samples[group] = step_samples
+
         sub_opt_list = ", ".join([f"{s[0]}: {s[1]}" for s in ret if s[3]])
         failed_list = ", ".join([f"{s[0]}: {s[1]}" for s in ret if s[4]])
         if sub_opt_list or failed_list:
@@ -758,3 +778,81 @@ class DAIndex(object):
 
     def get_all_figures(self) -> dict[tuple[str, str], plt.Figure]:
         return self.group_figures
+
+    def get_group_step_samples(self, group: str) -> dict[float, int]:
+        """
+        Returns the number of samples used for each step for the specified group.
+
+        Args:
+            group: The name of the group to get step sample information for.
+
+        Returns:
+            A dictionary mapping step scores to the number of samples used.
+        """
+        if group not in self.group_step_samples:
+            raise ValueError(f"No step information available for group '{group}'. Run evaluation first.")
+        return self.group_step_samples[group]
+
+    def get_group_sub_optimal_steps(self, group: str) -> dict[float, int]:
+        """
+        Returns information about sub-optimal steps for the specified group.
+        These are steps where the number of samples was below the preferred threshold
+        but still acceptable.
+
+        Args:
+            group: The name of the group to get sub-optimal step information for.
+
+        Returns:
+            A dictionary mapping step scores to the number of samples used for
+            sub-optimal steps.
+        """
+        if group not in self.group_sub_optimal_steps:
+            raise ValueError(f"No step information available for group '{group}'. Run evaluation first.")
+        return self.group_sub_optimal_steps[group]
+
+    def get_group_failed_steps(self, group: str) -> dict[float, int]:
+        """
+        Returns information about failed steps for the specified group.
+        These are steps where the number of samples was below the minimum threshold
+        and the step was excluded from the analysis.
+
+        Args:
+            group: The name of the group to get failed step information for.
+
+        Returns:
+            A dictionary mapping step scores to the number of samples used for
+            failed steps.
+        """
+        if group not in self.group_failed_steps:
+            raise ValueError(f"No step information available for group '{group}'. Run evaluation first.")
+        return self.group_failed_steps[group]
+
+    def get_all_groups_step_samples(self) -> dict[str, dict[float, int]]:
+        """
+        Returns the number of samples used for each step for all evaluated groups.
+
+        Returns:
+            A dictionary mapping group names to dictionaries of step scores and
+            their corresponding sample counts.
+        """
+        return self.group_step_samples.copy()
+
+    def get_all_groups_sub_optimal_steps(self) -> dict[str, dict[float, int]]:
+        """
+        Returns information about sub-optimal steps for all evaluated groups.
+
+        Returns:
+            A dictionary mapping group names to dictionaries of step scores and
+            their corresponding sample counts for sub-optimal steps.
+        """
+        return self.group_sub_optimal_steps.copy()
+
+    def get_all_groups_failed_steps(self) -> dict[str, dict[float, int]]:
+        """
+        Returns information about failed steps for all evaluated groups.
+
+        Returns:
+            A dictionary mapping group names to dictionaries of step scores and
+            their corresponding sample counts for failed steps.
+        """
+        return self.group_failed_steps.copy()
