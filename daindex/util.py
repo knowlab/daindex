@@ -86,8 +86,13 @@ def compare_two_groups(
 
 
 def area_under_curve(w_data: np.ndarray, decision_boundary: float = 0.5) -> tuple[float, float]:
-    """
-    calculate the area under curve - do NOT do interpolation
+    """Calculate the area under curve - do NOT do interpolation
+
+    Args:
+        w_data: The weighted data, should be a 2D array with shape (n, 3) where
+            the first column is the x values, the second column is the y values,
+            and the third column is the weights.
+        decision_boundary: The decision boundary for calculating the area under curve.
     """
     prev = None
     area = 0.0
