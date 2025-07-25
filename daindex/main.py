@@ -160,7 +160,7 @@ class DAIndex(object):
         weight_sum_steps: The number of bins for the weighted sum of k-step cutoffs.
         n_jobs: The number of jobs to run in parallel.
         model_name: The name of the model to use in the plots.
-        decision_boundary: The decision boundary for the DA curve.
+        decision_boundary: The decision boundary for the DA curve. Defaults to 0.5.
 
     Methods:
         setup_groups: Set up the groups for the DAI calculation.
