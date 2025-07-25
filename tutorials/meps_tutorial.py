@@ -387,6 +387,6 @@ index.get_all_ratios()
 index.get_group_ratios("White", "Asian")
 
 # %%
-index.get_group_ratios("White", "Non-White")
+index.get_all_groups_failed_steps()
 
 # %%
