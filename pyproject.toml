@@ -11,7 +11,7 @@ authors = [
     { name = "Harrison Wilde", email = "h.wilde@ucl.ac.uk" },
     { name = "Honghan Wu", email = "honghan.wu@gmail.com" },
 ]
-version = "0.7.0"
+version = "0.7.2"
 description = "Deterioration Allocation Index Framework"
 license = "MIT"
 readme = "README.md"
