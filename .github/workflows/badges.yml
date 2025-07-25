@@ -6,7 +6,6 @@ on:
 
 jobs:
   coverage-badge:
-
     name: Update Coverage and Tests Passing Badge
 
     runs-on: ubuntu-latest
@@ -14,37 +13,16 @@ jobs:
     steps:
       - name: Check-out repository
         uses: actions/checkout@v4
-      - name: Setup python
-        id: setup-python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Load cached Poetry installation
-        id: cached-poetry
-        uses: actions/cache@v4
-        with:
-          path: ~/.local
-          key: poetry-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}
-      - name: Install Poetry
-        if: steps.cached-poetry.outputs.cache-hit != 'true'
-        uses: snok/install-poetry@v1
-      - name: Configure Poetry
-        run: poetry config virtualenvs.in-project true
-      - name: Load cached venv
-        id: cached-poetry-dependencies-2
-        uses: actions/cache@v4
-        with:
-          path: .venv
-          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
-      - name: Install dependencies
-        if: steps.cached-poetry-dependencies-2.outputs.cache-hit != 'true'
-        run: poetry install --no-interaction --no-root --with dev
-      - name: Install project
-        run: poetry install --no-interaction --with dev
+      - name: Install latest version of uv
+        uses: astral-sh/setup-uv@v6
+      - name: Setup uv and install dependencies
+        run: |
+          uv venv
+          uv sync --dev
       - name: Run Coverage
         run: |
-          poetry run pytest --cov daindex tests
-          echo "COVERAGE=$(poetry run coverage report --format markdown --precision 1 | awk -F'|' 'END{gsub(/ *(\*\*|%)* */, "", $(NF-1)); print $(NF-1)}')" >> $GITHUB_ENV
+          uv run pytest --cov daindex tests
+          echo "COVERAGE=$(uv run coverage report --format markdown --precision 1 | awk -F'|' 'END{gsub(/ *(\*\*|%)* */, "", $(NF-1)); print $(NF-1)}')" >> $GITHUB_ENV
       - name: Create Coverage Badge
         uses: schneegans/dynamic-badges-action@v1.7.0
         with:
@@ -58,8 +36,8 @@ jobs:
           maxColorRange: 100
       - name: Run Tests
         run: |
-          echo "COLLECTED=$(poetry run pytest --collect-only | grep -m 1 "collected" | awk '{print $2;}' | tr -d '[:space:]\n')" >> $GITHUB_ENV
-          echo "PASSED=$(poetry run pytest --verbose | grep -o "PASSED" | wc -l | tr -d '[:space:]\n')" >> $GITHUB_ENV
+          echo "COLLECTED=$(uv run pytest --collect-only | grep -m 1 "collected" | awk '{print $2;}' | tr -d '[:space:]\n')" >> $GITHUB_ENV
+          echo "PASSED=$(uv run pytest --verbose | grep -o "PASSED" | wc -l | tr -d '[:space:]\n')" >> $GITHUB_ENV
       - name: Create Tests Passing Badge
         uses: schneegans/dynamic-badges-action@v1.7.0
         with:
@@ -72,7 +50,6 @@ jobs:
           minColorRange: 0
           maxColorRange: ${{ env.COLLECTED }}
   update-badges:
-
     name: Update CLOC Badges
 
     runs-on: ubuntu-latest
