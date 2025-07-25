@@ -236,7 +236,7 @@ class DAIndex(object):
         if not isinstance(groups, list):
             groups = [groups]
         if group_col is not None:
-            groups = [Group(g.name, group_col, g.definition, g.get_group) for g in groups]
+            groups = [Group(g.name, g.definition, group_col, g.det_threshold, g._get_group) for g in groups]
         elif any(g.col is None for g in groups):
             raise ValueError("group_col must be provided if any group objects do not have a col attribute")
         self.groups = {g.name: g for g in groups}
@@ -524,10 +524,10 @@ class DAIndex(object):
 
     def _check_group_pair(self, reference_group: str, other_group: str) -> None:
         assert reference_group in self.groups.keys(), (
-            f"Invalid group name provided for reference_group. Valid group names are {self.groups.keys().to_list()}"
+            f"Invalid group name provided for reference_group. Valid group names are {list(self.groups.keys())}"
         )
         assert other_group in self.groups.keys(), (
-            f"Invalid group name provided for other_group. Valid group names are {self.groups.keys().to_list()}"
+            f"Invalid group name provided for other_group. Valid group names are {list(self.groups.keys())}"
         )
 
     def _evaluate_group_pair_by_predictions(
@@ -607,7 +607,7 @@ class DAIndex(object):
 
     def _check_reference_group(self, reference_group: str) -> None:
         assert reference_group in self.groups.keys(), (
-            f"Invalid group name provided for reference_group. Valid group names are {self.groups.keys().to_list()}"
+            f"Invalid group name provided for reference_group. Valid group names are {list(self.groups.keys())}"
         )
 
     def evaluate_all_groups_by_models(
