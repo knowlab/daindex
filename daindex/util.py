@@ -12,10 +12,10 @@ def get_random_sample(df: pd.DataFrame, feature: str, feature_gen_fun: Callable 
     Extract the column relating to the feature and return it as a numpy array
     """
     if feature_gen_fun:
-        X = df.apply(feature_gen_fun, axis=1).to_numpy().reshape(-1, 1)
+        in_matrix = df.apply(feature_gen_fun, axis=1).to_numpy().reshape(-1, 1)
     else:
-        X = df[feature].to_numpy().reshape(-1, 1)
-    return X
+        in_matrix = df[feature].to_numpy().reshape(-1, 1)
+    return in_matrix
 
 
 def compare_two_groups(
@@ -45,12 +45,12 @@ def compare_two_groups(
         if two cohorts require different thresholds. For example, male/female might have
         different normal ranges for some measurements. The first element will be used for the first one.
     """
-    X1 = get_random_sample(df1, feature, feature_gen_fun=feature_gen_fun)
-    X2 = get_random_sample(df2, feature, feature_gen_fun=feature_gen_fun)
+    x1 = get_random_sample(df1, feature, feature_gen_fun=feature_gen_fun)
+    x2 = get_random_sample(df2, feature, feature_gen_fun=feature_gen_fun)
     # it is very important to use the same min/max values as the k-step weighting needs to
     # put the same weight for the same level of deterioration
-    min_v = min([np.min(X1), np.min(X2)])
-    max_v = max([np.max(X1), np.max(X2)])
+    min_v = min([np.min(x1), np.min(x2)])
+    max_v = max([np.max(x1), np.max(x2)])
 
     if isinstance(threshold, list):
         threshold1 = threshold[0]
@@ -58,7 +58,7 @@ def compare_two_groups(
     else:
         threshold1 = threshold2 = threshold
     c1_di = deterioration_index(
-        X1,
+        x1,
         min_v,
         max_v,
         reverse=reverse,
@@ -70,7 +70,7 @@ def compare_two_groups(
         do_plot=do_plot,
     )
     c2_di = deterioration_index(
-        X2,
+        x2,
         min_v,
         max_v,
         reverse=reverse,
@@ -112,7 +112,7 @@ def area_under_curve(w_data: np.ndarray, decision_boundary: float = 0.5) -> tupl
     return area, decision_area
 
 
-def vis_DA_indices(data: np.ndarray, label: str) -> tuple[float, float, np.ndarray]:
+def vis_da_indices(data: np.ndarray, label: str) -> tuple[float, float, np.ndarray]:
     """
     plot dot-line for approximating a DA curve
     """
@@ -165,8 +165,8 @@ def get_da_curve(
     plt.ylim(0, y_max * 1.05)
 
     # do plots
-    a1, da1, _ = vis_DA_indices(d1, g1_label)
-    a2, da2, _ = vis_DA_indices(d2, g2_label)
+    a1, da1, _ = vis_da_indices(d1, g1_label)
+    a2, da2, _ = vis_da_indices(d2, g2_label)
 
     ratios = calc_ratios(a1, a2, da1, da2)
 

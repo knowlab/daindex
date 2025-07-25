@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Literal, Union
+from typing import Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,7 +9,7 @@ from sklearn.neighbors import KernelDensity
 
 
 def vis_plot(
-    X: np.ndarray,
+    in_matrix: np.ndarray,
     x_d: np.ndarray,
     logprobs: np.ndarray,
     ylabel: str = "Percentage/PDF",
@@ -24,14 +24,14 @@ def vis_plot(
     plot probability density function (PDF) and histogram for comparison
     """
     if hist:
-        pd.DataFrame(X).rename(columns={0: "Histogram"}).plot.hist(
+        pd.DataFrame(in_matrix).rename(columns={0: "Histogram"}).plot.hist(
             bins=20, alpha=0.5, color="goldenrod", **{"density": True}, figsize=(18, 16)
         )
     else:
         plt.figure(figsize=(8, 2), dpi=100)
     plt.fill_between(x_d, np.exp(logprobs), alpha=0.5, label="Probability Density Function")
     # plt.plot(x, np.full_like(x, -0.005), '|k', markeredgewidth=1)
-    for vl, c, label in zip(vlines, vline_colors, vline_labels):
+    for vl, c, label in zip(vlines, vline_colors, vline_labels, strict=True):
         plt.axvline(x=vl, color=c, linestyle="--", label=f"{label}:{vl}")
 
     if len(vlines) > 0:
@@ -48,13 +48,13 @@ def vis_plot(
     # plt.xlim((10, 40))
 
 
-def gridsearch_bandwidth(X: np.ndarray) -> float:
+def gridsearch_bandwidth(in_matrix: np.ndarray) -> float:
     """
     Search for the best bandwith for the KDE
     """
     bandwidths = np.linspace(0, 1, 20)
     grid = GridSearchCV(KernelDensity(kernel="gaussian"), {"bandwidth": bandwidths}, cv=KFold(5))
-    grid.fit(X)
+    grid.fit(in_matrix)
     return grid.best_params_["bandwidth"]
 
 
@@ -88,7 +88,7 @@ def search_for_zero_mass_index(kde: KernelDensity, min_v: float, n_samples: int 
 
 
 def kde_estimate(
-    X: np.ndarray,
+    in_matrix: np.ndarray,
     bandwidth: float | Literal["scott", "silverman"] = 1.0,
     kernel: Literal["gaussian", "tophat", "epanechnikov", "exponential", "linear", "cosine"] = "gaussian",
     optimise_bandwidth: bool = True,
@@ -97,24 +97,24 @@ def kde_estimate(
     Kernel density estimation to get probability
     """
     if optimise_bandwidth:
-        bandwidth = gridsearch_bandwidth(X)
+        bandwidth = gridsearch_bandwidth(in_matrix)
         logging.info(f"learned best bandwidth {bandwidth}")
 
     kde = KernelDensity(bandwidth=bandwidth, kernel=kernel)
-    kde.fit(X)
+    kde.fit(in_matrix)
     return kde, bandwidth
 
 
 def deterioration_index(
-    X: np.ndarray,
+    in_matrix: np.ndarray,
     low_bound: float,
     up_bound: float,
     threshold: float,
     n_samples: int = 10000,
     plot_title: str = "",
     is_discrete: bool = False,
-    prev_discrete_value_offset=1,
-    weight_sum_steps=10,
+    prev_discrete_value_offset: int = 1,
+    weight_sum_steps: int = 10,
     reverse: bool = False,
     bandwidth: float | Literal["scott", "silverman"] = 1.0,
     kernel: Literal["gaussian", "tophat", "epanechnikov", "exponential", "linear", "cosine"] = "gaussian",
@@ -123,7 +123,7 @@ def deterioration_index(
 ) -> dict[str, int]:
     """
     Obtain deterioration index
-    X - the random sample of measurements
+    in_matrix - the random sample of measurements
     low_bound/up_nbound - the boundary values of the measurement
     n_samples - number of bins to use for probability calculation. default is 2000.
     plot_title - the title of the plot, if generates plot. default is empty string
@@ -131,16 +131,18 @@ def deterioration_index(
         Small bandwidths will always bring out pulse like PDFs. default is False.
     prev_discrete_value_offset - the difference between the threshold and the previous legitimate value. default is 1.
     weight_sum_steps - the number of bins for weighted sum of k-step cutoffs, default is 20
-    reverse - for calculating p(X<threshold), i.e., the smaller the measure value the more severe a patient is.
+    reverse - for calculating p(in_matrix<threshold), i.e., the smaller the measure value the more severe a patient is.
         default is False
     bandwidth - default bandwidth to use if not search bandwidth, default is 1
     kernel - the kernel to use for KDE, default is gaussian.
-    optimise_bandwidth - whether to use grid search to find optimal bandwidth for X. default is True
+    optimise_bandwidth - whether to use grid search to find optimal bandwidth for in_matrix. default is True
     do_plot - whether to generate plots, default is True
     """
 
     # estimate density function
-    kde, fitted_bandwith = kde_estimate(X, bandwidth=bandwidth, kernel=kernel, optimise_bandwidth=optimise_bandwidth)
+    kde, fitted_bandwith = kde_estimate(
+        in_matrix, bandwidth=bandwidth, kernel=kernel, optimise_bandwidth=optimise_bandwidth
+    )
 
     # detect pulse like PDF
     if fitted_bandwith < 0.1:
@@ -176,7 +178,7 @@ def deterioration_index(
             boundary_offset=boundary_offset,
         )
         vis_plot(
-            X,
+            in_matrix,
             bins,
             kd_vals,
             title=plot_title,
@@ -222,7 +224,12 @@ def deterioration_index(
         reverse=reverse,
     )
 
-    return {"overall-prob": round(probs.sum(), 4), "one-step": round(sq1, 4), "k-step": round(sqs, 6), "|X|": len(X)}
+    return {
+        "overall-prob": round(probs.sum(), 4),
+        "one-step": round(sq1, 4),
+        "k-step": round(sqs, 6),
+        "|in_matrix|": len(in_matrix),
+    }
 
 
 def stepped_severity(
@@ -270,7 +277,7 @@ def stepped_severity(
     # def weight_function(x: Any) -> Union[int, Any]:
     #     return math.log(x + 2, 2)
 
-    def weight_function(x: Any) -> Union[int, Any]:
+    def weight_function(x: int | float) -> int | float:
         return x + 1
 
     w = 0
