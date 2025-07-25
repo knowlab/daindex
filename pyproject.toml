@@ -1,73 +1,104 @@
-[tool.poetry]
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["daindex"]
+
+[project]
 name = "daindex"
-version = "0.6.4"
+authors = [
+    { name = "Harrison Wilde", email = "h.wilde@ucl.ac.uk" },
+    { name = "Honghan Wu", email = "honghan.wu@gmail.com" },
+]
+version = "0.7.0"
 description = "Deterioration Allocation Index Framework"
-authors = ["Honghan <honghan.wu@gmail.com>", "HarrisonWilde <h.wilde@ucl.ac.uk>"]
 license = "MIT"
-readme = ["README.md"]
-repository = "https://github.com/knowlab/daindex"
-keywords = ["evaluation", "fairness", "machine learning", "data science", "bias"]
+readme = "README.md"
+keywords = [
+    "evaluation",
+    "fairness",
+    "machine learning",
+    "data science",
+    "bias",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
+requires-python = ">=3.10"
+dependencies = [
+    "joblib>=1.5.1",
+    "matplotlib>=3.10.3",
+    "numpy>=2.2.6",
+    "pandas>=2.3.1",
+    "scikit-learn>=1.7.1",
+    "tqdm>=4.67.1",
+]
 
-[tool.poetry.dependencies]
-python = "^3.10"
-pandas = "^2.2.2"
-numpy = ">=1.16"
-matplotlib = "^3.9.2"
-scikit-learn = "^1.5.1"
-joblib = "^1.4.2"
-tqdm = "^4.67.0"
-ipython = "^8.29.0"
+[dependency-groups]
+dev = [
+    "pre-commit>=4.2.0",
+    "pytest>=8.4.1",
+    "pytest-cov>=6.2.1",
+    "pytest-mock>=3.14.1",
+    "ruff>=0.12.5",
+    "tox>=4.28.2",
+    "tox-uv>=1.26.2",
+]
+tutorials = ["aif360>=0.6.1", "jupyter>=1.1.1", "notebook>=7.4.4"]
 
-[tool.poetry.group.dev]
-optional = true
+[tool.uv]
+package = true
+default-groups = ["dev", "tutorials"]
 
-[tool.poetry.group.dev.dependencies]
-ruff = "^0.6.3"
-pre-commit = "^3.8.0"
-pre-commit-hooks = "^4.6.0"
-pytest = "^8.3.3"
-pytest-cov = "^5.0.0"
-tox = "^4.18.0"
-pytest-mock = "^3.14.0"
-
-[tool.poetry.group.tutorials]
-optional = true
-
-[tool.poetry.group.tutorials.dependencies]
-jupyter = "^1.1.1"
-notebook = "^7.2.2"
-aif360 = "^0.6.1"
+[project.urls]
+repository = "https://github.com/knowlab/daindex"
+issues = "https://github.com/knowlab/daindex/issues"
 
 [tool.ruff]
-include = ["*.py", "*.pyi", "pyproject.toml", "*.ipynb"]
 line-length = 120
-indent-width = 4
 
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F", "C90", "I"]
-ignore = []
-
-[tool.ruff.format]
-quote-style = "double"
-indent-style = "space"
-skip-magic-trailing-comma = false
-line-ending = "auto"
+select = [
+    "ANN", # flake8-annotations
+    "B",   # flake8-bugbear: Likely bugs
+    "C",   # flake8-comprehensions and mccabe complexity
+    "E",   # pycodestyle: Errors (default)
+    "F",   # pyflakes: Linter
+    "I",   # isort
+    "N",   # pep8-naming: Naming conventions
+    "W",   # pycodestyle: Warnings (default)
+]
+ignore = [
+    "D100", # Warns about missing module-level docstrings
+    "S101", # Warns about assert being removed when compiled
+    "B006", # Do not use mutable data structures for argument defaults
+]
 
 [tool.ruff.lint.isort]
-known-first-party = ["daindex"]
+known-first-party = ["{{ cookiecutter.module_name }}"]
 
-[tool.pytest.ini_options]
-testpaths = "tests"
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401", "E402", "D104"]
+
+[tool.ruff.format]
+docstring-code-format = true
+docstring-code-line-length = "dynamic"
+
+[tool.tox]
+envlist = ["py310", "py311", "py312", "py313"]
+
+[tool.tox.env_run_base]
+runner = "uv-venv-lock-runner"
+description = "Run test under {base_python}"
+commands = [["pytest", "-v"]]
 
 [tool.coverage.run]
-source = ["daindex"]
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+branch = true
+source = ["."]
+omit = ["tests/*", "tutorials/*"]

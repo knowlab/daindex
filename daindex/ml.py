@@ -9,13 +9,13 @@ from daindex.core import deterioration_index
 
 @runtime_checkable
 class ProbabilisticModel(Protocol):
-    def predict_proba(self, X: np.ndarray) -> np.ndarray: ...
+    def predict_proba(self, in_matrix: np.ndarray) -> np.ndarray: ...
 
 
 def obtain_da_index(
-    df,
-    cohort_name,
-    scores,
+    df: pd.DataFrame,
+    cohort_name: str,
+    scores: list[float],
     score_bounds: tuple[float, float],
     det_feature: str,
     det_threshold: float,
@@ -62,7 +62,7 @@ def obtain_da_index(
 
     det_list = []
     i = 0
-    for idx, r in df.iterrows():
+    for _, r in df.iterrows():
         p = scores[i]
         if lb <= p <= ub:
             if det_feature_func is not None:
@@ -74,16 +74,21 @@ def obtain_da_index(
         if len(det_list) >= det_list_length:
             if det_list_length != det_list_lengths[0]:
                 warnings.warn(
-                    f"Sub-optimal number of samples for DAI calculation, {len(det_list)} is acceptable but {det_list_lengths[0]} is preferred."
+                    f"Sub-optimal number of samples for DAI calculation, "
+                    f"{len(det_list)} is acceptable but {det_list_lengths[0]} is preferred.",
+                    stacklevel=2,
                 )
             break
     else:
-        warnings.warn(f"Insufficient number of samples for DAI calculation, {len(det_list)} < {det_list_lengths[-1]}.")
+        warnings.warn(
+            f"Insufficient number of samples for DAI calculation, {len(det_list)} < {det_list_lengths[-1]}.",
+            stacklevel=2,
+        )
         return len(det_list), 0
 
-    X = np.array(det_list)
+    in_matrix = np.array(det_list)
     di_ret = deterioration_index(
-        X[~np.isnan(X)].reshape(-1, 1),
+        in_matrix[~np.isnan(in_matrix)].reshape(-1, 1),
         min_det_v,
         max_det_v,
         threshold=det_threshold,
@@ -139,13 +144,16 @@ def get_da_values_on_models(
         det_feature: The feature name representing the deterioration metric.
         det_threshold: The threshold value for determining deterioration.
         det_label: The label for the deterioration index. Defaults to None to be replaced by `det_feature`.
-        det_feature_func: The function to be used to extract the deterioration feature. Defaults to None as we assume it is in the `df`.
-        det_list_lengths: The list of acceptable lengths to be used for the deterioration index calculation. The first element is the preferred minimum length. Defaults to [20, 10, 5].
+        det_feature_func: The function to be used to extract the deterioration feature. Defaults to None as we assume
+            it is in the `df`.
+        det_list_lengths: The list of acceptable lengths to be used for the deterioration index calculation. The first
+            element is the preferred minimum length. Defaults to [20, 10, 5].
         steps: The number of steps for the deterioration index calculation. Defaults to 50.
         is_discrete: Flag indicating if the deterioration feature is discrete. Defaults to False.
         reverse: Flag indicating if the deterioration index should be reversed. Defaults to False.
         optimise_bandwidth: Flag indicating if the bandwidth of the kde should be searched. Defaults to True.
-        score_margin_multiplier: The multiplier to be used for the score margin, 1.0 results in no overlap, some overlap works well, essentially this smooths. Defaults to 5.0.
+        score_margin_multiplier: The multiplier to be used for the score margin, 1.0 results in no overlap, some overlap
+            works well, essentially this smooths. Defaults to 5.0.
 
     Returns:
         A list of deterioration index values computed at each step,
@@ -218,13 +226,16 @@ def get_da_values_on_predictions(
         det_feature: The feature name representing the deterioration metric.
         det_threshold: The threshold value for determining deterioration.
         det_label: The label for the deterioration index. Defaults to None to be replaced by `det_feature`.
-        det_feature_func: The function to be used to extract the deterioration feature. Defaults to None as we assume it is in the `df`.
-        det_list_lengths: The list of acceptable lengths to be used for the deterioration index calculation. The first element is the preferred minimum length. Defaults to [20, 10, 5].
+        det_feature_func: The function to be used to extract the deterioration feature. Defaults to None as we assume it
+            is in the `df`.
+        det_list_lengths: The list of acceptable lengths to be used for the deterioration index calculation. The first
+            element is the preferred minimum length. Defaults to [20, 10, 5].
         steps: The number of steps for the deterioration index calculation. Defaults to 50.
         is_discrete: Flag indicating if the deterioration feature is discrete. Defaults to False.
         reverse: Flag indicating if the deterioration index should be reversed. Defaults to False.
         optimise_bandwidth: Flag indicating if the bandwidth of the kde should be searched. Defaults to True.
-        score_margin_multiplier: The multiplier to be used for the score margin, 1.0 results in no overlap, some overlap works well, essentially this smooths. Defaults to 1.5.
+        score_margin_multiplier: The multiplier to be used for the score margin, 1.0 results in no overlap, some overlap
+            works well, essentially this smooths. Defaults to 1.5.
 
     Returns:
         A list of deterioration index values computed at each step,

@@ -1,5 +1,5 @@
 import warnings
-from typing import Any, Callable, Literal, Protocol, runtime_checkable
+from typing import Callable, Literal, Protocol, runtime_checkable
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -13,7 +13,7 @@ from tqdm.autonotebook import tqdm
 
 @runtime_checkable
 class ProbabilisticModel(Protocol):
-    def predict_proba(self, X: np.ndarray) -> np.ndarray: ...
+    def predict_proba(self, in_matrix: np.ndarray) -> np.ndarray: ...
 
 
 class DeteriorationFeature(object):
@@ -28,7 +28,7 @@ class DeteriorationFeature(object):
         func: An optional function to apply to each row to extract the feature value.
         is_discrete: Whether the feature is discrete.
         prev_discrete_value_offset: The difference between the threshold and the previous legitimate value.
-        reverse: For calculating p(X<threshold), i.e., the smaller the measure value the more severe a patient is.
+        reverse: For calculating p(in_matrix<threshold), i.e., the smaller the measure value the more severe a patient.
     """
 
     def __init__(
@@ -40,7 +40,7 @@ class DeteriorationFeature(object):
         is_discrete: bool = False,
         prev_discrete_value_offset: int = 1,
         reverse: bool = False,
-    ):
+    ) -> None:
         self.col = col
         self.threshold = threshold
         self.label = label or col
@@ -49,7 +49,7 @@ class DeteriorationFeature(object):
         self.prev_discrete_value_offset = prev_discrete_value_offset
         self.reverse = reverse
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"DeteriorationFeature(col='{self.col}', threshold={self.threshold}, label='{self.label}')"
 
 
@@ -59,12 +59,15 @@ class Group(object):
     A list of these should be passed into the `groups` parameter of the `DAIndex` class.
 
     Args:
-        name: The name of the group in the desired formatting to display on plots and use as a key to extract results etc.
+        name: The name of the group in the desired formatting to display on plots and use as a key to extract results
+            etc.
         definition: The value(s) in the column that define the group.
             E.g. could be a list of values, a single value, string, number, etc.
             If not provided, defaults to the name.
-        col: The column name in the cohort DataFrame that contains the group definition. Can be overriden by the `group_col` parameter of the `DAIndex` class.
-        det_threshold: The threshold value for the deterioration index, overriding the `threshold` attribute of the `DeteriorationFeature`.
+        col: The column name in the cohort DataFrame that contains the group definition. Can be overriden by the
+            `group_col` parameter of the `DAIndex` class.
+        det_threshold: The threshold value for the deterioration index, overriding the `threshold` attribute of the
+            `DeteriorationFeature`.
         get_group: This is an optional argument to allow passing in of a more complex function
             that returns the group DataFrame.
             If not provided, the group DataFrame is obtained by filtering the cohort DataFrame
@@ -94,8 +97,13 @@ class Group(object):
     """
 
     def __init__(
-        self, name: str, definition: Any = None, col: str = None, det_threshold=None, get_group: Callable = None
-    ):
+        self,
+        name: str,
+        definition: list | str | None = None,
+        col: str | None = None,
+        det_threshold: float | None = None,
+        get_group: Callable | None = None,
+    ) -> None:
         self.name = name
         if definition is None:
             self.definition = [name]
@@ -107,7 +115,7 @@ class Group(object):
         self.det_threshold = det_threshold
         self._get_group = get_group
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Group(name='{self.name}', col='{self.col}', definition={self.definition})"
 
     def __call__(self, cohort: pd.DataFrame) -> pd.DataFrame:
@@ -160,8 +168,10 @@ class DAIndex(object):
         setup_deterioration_feature: Set up the deterioration feature for the DAI calculation.
         evaluate_group_pair_by_predictions: Calculate the DAI for a pair of groups based on model predictions.
         evaluate_group_pair_by_models: Calculate the DAI for a pair of groups based on model objects.
-        evaluate_all_groups_by_predictions: Calculate the DAI for all groups relative to a single reference group based on model predictions.
-        evaluate_all_groups_by_models: Calculate the DAI for all groups relative to a single reference group based on model objects.
+        evaluate_all_groups_by_predictions: Calculate the DAI for all groups relative to a single reference group based
+            on model predictions.
+        evaluate_all_groups_by_models: Calculate the DAI for all groups relative to a single reference group based on
+            model objects.
         present_results: Print the DAI results for a pair of groups.
         present_all_results: Print the DAI results for all group pairs.
         get_group_ratios: Get the DAI ratios for a pair of groups.
@@ -187,7 +197,7 @@ class DAIndex(object):
         n_jobs: int = -1,
         model_name: str = None,
         decision_boundary: float = 0.5,
-    ):
+    ) -> None:
         self.cohort = cohort
         self.setup_groups(groups, group_col)
         self.setup_deterioration_feature(det_feature)
@@ -257,25 +267,25 @@ class DAIndex(object):
         self.min_det_val = min(g(self.cohort)[self.det_feature.col].min() for g in self.groups.values())
         self.max_det_val = max(g(self.cohort)[self.det_feature.col].max() for g in self.groups.values())
 
-    def _gridsearch_bandwidth(self, X: np.ndarray) -> float:
+    def _gridsearch_bandwidth(self, in_matrix: np.ndarray) -> float:
         """
         Search for the best bandwith for the KDE
         """
         bandwidths = np.linspace(0, 1, 20)
         grid = GridSearchCV(KernelDensity(kernel="gaussian"), {"bandwidth": bandwidths}, cv=KFold(5))
-        grid.fit(X)
+        grid.fit(in_matrix)
         return grid.best_params_["bandwidth"]
 
-    def _kde_estimate(self, X: np.ndarray) -> KernelDensity:
+    def _kde_estimate(self, in_matrix: np.ndarray) -> KernelDensity:
         """
         Kernel density estimation to get probability
         """
         if self.optimise_bandwidth:
-            bandwidth = self._gridsearch_bandwidth(X)
+            bandwidth = self._gridsearch_bandwidth(in_matrix)
         else:
             bandwidth = self.bandwidth
         kde = KernelDensity(bandwidth=bandwidth, kernel=self.kernel)
-        kde.fit(X)
+        kde.fit(in_matrix)
 
         # detect pulse like PDF
         if bandwidth < 0.1:
@@ -348,7 +358,7 @@ class DAIndex(object):
                 )
         s = 0
 
-        def weight_function(x: Any) -> int | Any:
+        def weight_function(x: float) -> float:
             return x + 1
 
         w = 0
@@ -360,27 +370,28 @@ class DAIndex(object):
             w += weight_function(i)
         return s / w
 
-    def _deterioration_index(self, X: np.ndarray, group: str) -> float:
+    def _deterioration_index(self, in_matrix: np.ndarray, group: str) -> float:
         """
         Obtain deterioration index
-        X - the random sample of measurements
+        in_matrix - the random sample of measurements
         low_bound/up_nbound - the boundary values of the measurement
         n_samples - number of bins to use for probability calculation. default is 2000.
         plot_title - the title of the plot, if generates plot. default is empty string
         is_discrete - whether the random sample is discrete. NB: this might be overwritten based on bandwidth learned.
             Small bandwidths will always bring out pulse like PDFs. default is False.
-        prev_discrete_value_offset - the difference between the threshold and the previous legitimate value. default is 1.
+        prev_discrete_value_offset - the difference between the threshold and the previous legitimate value.
+            default is 1.
         weight_sum_steps - the number of bins for weighted sum of k-step cutoffs, default is 20
-        reverse - for calculating p(X<threshold), i.e., the smaller the measure value the more severe a patient is.
+        reverse - for calculating p(in_matrix<threshold), i.e., the smaller the measure value the more severe a patient.
             default is False
         bandwidth - default bandwidth to use if not search bandwidth, default is 1
         kernel - the kernel to use for KDE, default is gaussian.
-        optimise_bandwidth - whether to use grid search to find optimal bandwidth for X. default is True
+        optimise_bandwidth - whether to use grid search to find optimal bandwidth for in_matrix. default is True
         do_plot - whether to generate plots, default is True
         """
 
         # estimate density function
-        kde = self._kde_estimate(X)
+        kde = self._kde_estimate(in_matrix)
 
         # automatically adjust on boundaries
         _, adjusted_min = self._search_for_zero_mass_index(kde, self.min_det_val)
@@ -445,7 +456,7 @@ class DAIndex(object):
         sub_opt = False
 
         df = self.groups[group](self.cohort)
-        for idx, r in df.iterrows():
+        for _, r in df.iterrows():
             p = self.group_scores[group][i]
             if lb <= p <= ub:
                 if self.det_feature.func is not None:
@@ -461,12 +472,12 @@ class DAIndex(object):
         else:
             return len(det_list), 0.0, False, True
 
-        X = np.array(det_list)
-        di_ret = self._deterioration_index(X[~np.isnan(X)].reshape(-1, 1), group)
+        in_matrix = np.array(det_list)
+        di_ret = self._deterioration_index(in_matrix[~np.isnan(in_matrix)].reshape(-1, 1), group)
         return len(det_list), di_ret, sub_opt, False
 
-    def _get_group_ksteps(self, group) -> list[tuple[float, int, float]]:
-        def process_step(s) -> tuple[float, int, float, bool, bool]:
+    def _get_group_ksteps(self, group: str) -> list[tuple[float, int, float]]:
+        def process_step(s: int) -> tuple[float, int, float, bool, bool]:
             length, di_ret, sub_opt, failed = self._obtain_da_index(group, self.step_score_bounds[s])
             return (s, length, di_ret, sub_opt, failed)
 
@@ -482,7 +493,7 @@ class DAIndex(object):
                 message += f"\nThere are a sub-optimal number of samples for these scores: {sub_opt_list}"
             if failed_list:
                 message += f"\nThere are too few samples for these scores: {failed_list}"
-            warnings.warn(message)
+            warnings.warn(message, stacklevel=2)
         return np.array([(s[0], s[1], s[2]) for s in ret if not s[4]])
 
     def _evaluate_group_pair(self, reference_group: str, other_group: str, rerun: bool, rerun_reference: bool) -> None:
@@ -492,16 +503,16 @@ class DAIndex(object):
             self.group_ksteps[other_group] = self._get_group_ksteps(other_group)
 
     def _check_group_pair(self, reference_group: str, other_group: str) -> None:
-        assert (
-            reference_group in self.groups.keys()
-        ), f"Invalid group name provided for reference_group. Valid group names are {self.groups.keys().to_list()}"
-        assert (
-            other_group in self.groups.keys()
-        ), f"Invalid group name provided for other_group. Valid group names are {self.groups.keys().to_list()}"
+        assert reference_group in self.groups.keys(), (
+            f"Invalid group name provided for reference_group. Valid group names are {self.groups.keys().to_list()}"
+        )
+        assert other_group in self.groups.keys(), (
+            f"Invalid group name provided for other_group. Valid group names are {self.groups.keys().to_list()}"
+        )
 
     def _evaluate_group_pair_by_predictions(
         self, predictions_col: str, reference_group: str, other_group: str, rerun: bool, rerun_reference: bool
-    ):
+    ) -> None:
         if rerun_reference or reference_group not in self.group_scores.keys():
             self.group_scores[reference_group] = self.groups[reference_group](self.cohort)[predictions_col].to_numpy()
         if rerun or other_group not in self.group_scores.keys():
@@ -515,7 +526,7 @@ class DAIndex(object):
         other_group: str,
         rerun: bool = True,
         n_jobs: int = -1,
-    ):
+    ) -> tuple:
         self.n_jobs = n_jobs
         self._check_group_pair(reference_group, other_group)
         self._evaluate_group_pair_by_predictions(predictions_col, reference_group, other_group, rerun, rerun)
@@ -549,7 +560,7 @@ class DAIndex(object):
         other_group: str,
         rerun: bool,
         rerun_reference: bool,
-    ):
+    ) -> None:
         if rerun_reference or reference_group not in self.group_scores.keys():
             self.group_scores[reference_group] = self._get_scores(reference_group, models, feature_list)
         if rerun or other_group not in self.group_scores.keys():
@@ -564,7 +575,7 @@ class DAIndex(object):
         other_group: str,
         rerun: bool = True,
         n_jobs: int = -1,
-    ):
+    ) -> tuple[dict[str, float | str], plt.Figure]:
         self.n_jobs = n_jobs
         self._check_group_pair(reference_group, other_group)
         models = models if isinstance(models, list) else [models]
@@ -575,9 +586,9 @@ class DAIndex(object):
         return self.group_ratios[(reference_group, other_group)], self.group_figures[(reference_group, other_group)]
 
     def _check_reference_group(self, reference_group: str) -> None:
-        assert (
-            reference_group in self.groups.keys()
-        ), f"Invalid group name provided for reference_group. Valid group names are {self.groups.keys().to_list()}"
+        assert reference_group in self.groups.keys(), (
+            f"Invalid group name provided for reference_group. Valid group names are {self.groups.keys().to_list()}"
+        )
 
     def evaluate_all_groups_by_models(
         self,
@@ -586,7 +597,7 @@ class DAIndex(object):
         reference_group: str,
         rerun: bool = True,
         n_jobs: int = -1,
-    ):
+    ) -> None:
         self.n_jobs = n_jobs
         self._check_reference_group(reference_group)
         models = models if isinstance(models, list) else [models]
@@ -605,7 +616,7 @@ class DAIndex(object):
 
     def evaluate_all_groups_by_predictions(
         self, predictions_col: str, reference_group: str, rerun: bool = True, n_jobs: int = -1
-    ):
+    ) -> None:
         self.n_jobs = n_jobs
         self._check_reference_group(reference_group)
         pbar = tqdm(
@@ -700,7 +711,10 @@ class DAIndex(object):
         ylabel_string = f"{self.det_feature.label} {inequality_string} {det_threshold}"
         det_threshold_reference = self.groups[reference_group].det_threshold or self.det_feature.threshold
         if det_threshold != det_threshold_reference:
-            ylabel_string += f" for {other_group} group,\n{self.det_feature.label} {inequality_string} {det_threshold_reference} for {reference_group} group"
+            ylabel_string += (
+                f" for {other_group} group,\n{self.det_feature.label} {inequality_string}"
+                f" {det_threshold_reference} for {reference_group} group"
+            )
         plt.ylabel(ylabel_string)
 
         # plot decision region
@@ -714,7 +728,7 @@ class DAIndex(object):
 
         return ratios, fig
 
-    def present_results(self, reference_group, other_group):
+    def present_results(self, reference_group: str, other_group: str) -> None:
         ratios, fig = (
             self.group_ratios[(reference_group, other_group)],
             self.group_figures[(reference_group, other_group)],
@@ -727,20 +741,20 @@ class DAIndex(object):
         )
         display(fig)
 
-    def present_all_results(self):
+    def present_all_results(self) -> None:
         for group_pair in self.group_figures.keys():
             self.present_results(*group_pair)
 
-    def get_group_ratios(self, reference_group, other_group):
+    def get_group_ratios(self, reference_group: str, other_group: str) -> dict[str, float | str]:
         return self.group_ratios[(reference_group, other_group)]
 
-    def get_group_figures(self, reference_group, other_group):
+    def get_group_figures(self, reference_group: str, other_group: str) -> plt.Figure:
         return self.group_figures[(reference_group, other_group)]
 
-    def get_all_ratios(self):
+    def get_all_ratios(self) -> pd.DataFrame:
         df = pd.DataFrame(self.group_ratios).T
         df.index = pd.MultiIndex.from_tuples(df.index, names=["Reference", "Comparison"])
         return df
 
-    def get_all_figures(self):
+    def get_all_figures(self) -> dict[tuple[str, str], plt.Figure]:
         return self.group_figures

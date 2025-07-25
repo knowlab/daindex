@@ -1,6 +1,5 @@
 # The Deterioration-Allocation Index: A framework for health inequality evaluation
 
-
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/daindex)](https://www.python.org/downloads/)
 [![PyPI - Package Status](https://img.shields.io/pypi/status/daindex)](https://pypi.org/project/daindex/)
 [![PyPI - Latest Release](https://img.shields.io/pypi/v/daindex)](https://pypi.org/project/daindex/)
@@ -41,11 +40,11 @@ pip install daindex
 
 ### Advanced install (for developers)
 
-After cloning the repository, you can install the package in a development `venv` using [`poetry`](https://python-poetry.org/docs/):
+After cloning the repository, you can install the package for local development using [`uv`](https://docs.astral.sh/uv/):
 
 ```bash
-poetry install --with dev
-pre-commit install
+uv sync
+uv run pre-commit install
 ```
 
 ## Usage
@@ -84,8 +83,8 @@ pre-commit install
 
    You will see something similar to.
    ```python
-   ({'overall-prob': 0.9999, 'one-step': 0.7199, 'k-step': 0.054609, '|X|': 100},
-   {'overall-prob': 0.9999, 'one-step': 0.42, 'k-step': 0.03195, '|X|': 100},
+   ({'overall-prob': 0.9999, 'one-step': 0.7199, 'k-step': 0.054609, '|in_matrix|': 100},
+   {'overall-prob': 0.9999, 'one-step': 0.42, 'k-step': 0.03195, '|in_matrix|': 100},
    0.7092018779342724)
    ```
    The result means the inequality of female vs male is `0.709`.
