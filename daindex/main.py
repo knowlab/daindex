@@ -141,8 +141,8 @@ class DAIndex(object):
     `evaluate_all_groups_by_models` methods can be called to calculate the DAI for all groups relative to a
     single reference group.
 
-    The results can be accessed using the `get_group_ratios` and `get_group_figures` methods, or printed using
-    the `present_results` and `present_all_results` methods.
+    The results can be accessed using the `get_group_ratio` and `get_group_figure` methods (with a reference and
+    other group), or printed using the `present_results` and `present_all_results` methods.
 
     Args:
         cohort: The DataFrame containing the data for the cohort.
@@ -174,8 +174,8 @@ class DAIndex(object):
             model objects.
         present_results: Print the DAI results for a pair of groups.
         present_all_results: Print the DAI results for all group pairs.
-        get_group_ratios: Get the DAI ratios for a pair of groups.
-        get_group_figures: Get the DAI figures for a pair of groups.
+        get_group_ratio: Get the DAI ratios for a pair of groups.
+        get_group_figure: Get the DAI figure for a pair of groups.
         get_all_ratios: Get the DAI ratios for all group pairs.
         get_all_figures: Get the DAI figures for all group pairs.
     """
@@ -745,10 +745,10 @@ class DAIndex(object):
         for group_pair in self.group_figures.keys():
             self.present_results(*group_pair)
 
-    def get_group_ratios(self, reference_group: str, other_group: str) -> dict[str, float | str]:
+    def get_group_ratio(self, reference_group: str, other_group: str) -> dict[str, float | str]:
         return self.group_ratios[(reference_group, other_group)]
 
-    def get_group_figures(self, reference_group: str, other_group: str) -> plt.Figure:
+    def get_group_figure(self, reference_group: str, other_group: str) -> plt.Figure:
         return self.group_figures[(reference_group, other_group)]
 
     def get_all_ratios(self) -> pd.DataFrame:
