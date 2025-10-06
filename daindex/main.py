@@ -757,7 +757,7 @@ class DAIndex(object):
             threshold_label = f" | Thr: {det_threshold:.3f}"
 
             # Construct legend label
-            label = f"{group}{' (reference group)' if is_ref else ''}{threshold_label}{ratio_label}"
+            label = f"{group}{' (Reference Group)' if is_ref else ''}{threshold_label}{ratio_label}"
 
             # Plot with style distinction
             width = 2.0 if is_ref else 1.2
