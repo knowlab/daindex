@@ -1,14 +1,18 @@
+import itertools
 import warnings
+from collections import namedtuple
 from typing import Callable, Literal, Protocol, runtime_checkable
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from IPython.display import display
+import seaborn as sns
 from joblib import Parallel, delayed
 from sklearn.model_selection import GridSearchCV, KFold
 from sklearn.neighbors import KernelDensity
 from tqdm.autonotebook import tqdm
+
+BinResult = namedtuple("BinResult", ["score", "length", "di_ret", "sub_opt", "failed"])
 
 
 @runtime_checkable
@@ -132,17 +136,17 @@ class DAIndex(object):
     """
     Class to calculate the Deterioration Allocation Index (DAI) for a cohort of patients.
     The DAI is a measure of the deterioration of a patient's health over time, based on a given feature.
-    We compare the DAI between two groups relative to a given model's predictions. This then gives us
-    a measure of how fair the model's predictions are across the two groups.
+    We compare the DAI between two groups relative to a given model's predictions. This then gives us a measure of how
+    fair the model's predictions are across the two groups.
 
-    This class should be instantiated first with a `DetertiorationFeature` object and a list of `Group` objects.
-    The `evaluate_group_pair_by_predictions` or `evaluate_group_pair_by_models` methods can then be called to
-    calculate the DAI for a pair of groups. Alternatively, the `evaluate_all_groups_by_predictions` or
-    `evaluate_all_groups_by_models` methods can be called to calculate the DAI for all groups relative to a
-    single reference group.
+    1. This class should be instantiated first with a `DetertiorationFeature` object and a list of `Group` objects.
+    2. The `evaluate_groups_by_predictions` or `evaluate_groups_by_models` methods can then be called to calculate
+    the DAI for a reference and list of groups.
+    3. The results can be accessed using the `get_group_ratio` and `get_group_figures` methods (with a reference and
+    other group(s)), or printed using the `present_results` and `present_all_results` methods.
 
-    The results can be accessed using the `get_group_ratio` and `get_group_figure` methods (with a reference and
-    other group), or printed using the `present_results` and `present_all_results` methods.
+    Individual group curve data can be accessed via `get_group_curves` and `get_all_group_curves` methods
+    for custom plotting.
 
     Args:
         cohort: The DataFrame containing the data for the cohort.
@@ -167,76 +171,10 @@ class DAIndex(object):
         setup_groups: Set up the groups for the DAI calculation.
         setup_daauc_params: Set up the parameters for the DAI calculation.
         setup_deterioration_feature: Set up the deterioration feature for the DAI calculation.
-        evaluate_group_pair_by_predictions: Calculate the DAI for a pair of groups based on model predictions.
-        evaluate_group_pair_by_models: Calculate the DAI for a pair of groups based on model objects.
-        evaluate_all_groups_by_predictions: Calculate the DAI for all groups relative to a single reference group based
-            on model predictions.
-        evaluate_all_groups_by_models: Calculate the DAI for all groups relative to a single reference group based on
-            model objects.
-        present_results: Print the DAI results for a pair of groups.
-        present_all_results: Print the DAI results for all group pairs.
-        get_group_ratio: Get the DAI ratios for a pair of groups.
-        get_group_figure: Get the DAI figure for a pair of groups.
-        get_all_ratios: Get the DAI ratios for all group pairs.
-        get_all_figures: Get the DAI figures for all group pairs.
-        get_group_bin_samples: Get the number of samples used for each bin for a specific group.
-        get_group_sub_optimal_bins: Get information about sub-optimal bins for a specific group.
-        get_group_failed_bins: Get information about failed bins for a specific group.
-        get_all_groups_bin_samples: Get bin sample information for all evaluated groups.
-        get_all_groups_sub_optimal_bins: Get sub-optimal bin information for all evaluated groups.
-        get_all_groups_failed_bins: Get failed bin information for all evaluated groups.
+
     """
 
-    def __init__(
-        self,
-        cohort: pd.DataFrame,
-        groups: Group | list[Group],
-        det_feature: DeteriorationFeature,
-        group_col: str = None,
-        n_bins: int = 50,
-        acceptable_samples: int = 20,
-        minimum_samples: int = 5,
-        score_margin_multiplier: float = 5.0,
-        bandwidth: float | Literal["scott", "silverman"] = 1.0,
-        optimise_bandwidth: bool = False,
-        kernel: Literal["gaussian", "tophat", "epanechnikov", "exponential", "linear", "cosine"] = "gaussian",
-        n_samples: int = 10000,
-        weight_sum_steps: int = 50,
-        n_jobs: int = -1,
-        model_name: str = None,
-        decision_boundary: float = 0.5,
-    ) -> None:
-        self.cohort = cohort
-        self.setup_groups(groups, group_col)
-        self.setup_deterioration_feature(det_feature)
-        self.setup_daauc_params(
-            n_bins,
-            acceptable_samples,
-            minimum_samples,
-            score_margin_multiplier,
-            bandwidth,
-            optimise_bandwidth,
-            kernel,
-            n_samples,
-            weight_sum_steps,
-            n_jobs,
-        )
-
-        self.model_name = model_name or "Allocation"
-        self.decision_boundary = decision_boundary
-
-        self.group_scores = {}
-        self.group_ksteps = {}
-        self.group_ratios = {}
-        self.group_figures = {}
-        self.issues = []
-        self.group_sub_optimal_bins = {}  # Stores sub-optimal bins for each group
-        self.group_failed_bins = {}  # Stores failed bins for each group
-        self.group_bin_samples = {}  # Stores sample counts for each bin for each group
-
-    def setup_groups(self, groups: Group | list[Group], group_col: str = None) -> None:
-        if not isinstance(groups, list):
-            groups = [groups]
+    def setup_groups(self, groups: list[Group], group_col: str = None) -> None:
         if group_col is not None:
             groups = [Group(g.name, g.definition, group_col, g.det_threshold, g._get_group) for g in groups]
         elif any(g.col is None for g in groups):
@@ -277,6 +215,52 @@ class DAIndex(object):
         self.det_feature = det_feature
         self.min_det_val = min(g(self.cohort)[self.det_feature.col].min() for g in self.groups.values())
         self.max_det_val = max(g(self.cohort)[self.det_feature.col].max() for g in self.groups.values())
+
+    def __init__(
+        self,
+        cohort: pd.DataFrame,
+        groups: list[Group],
+        det_feature: DeteriorationFeature,
+        group_col: str = None,
+        n_bins: int = 50,
+        acceptable_samples: int = 20,
+        minimum_samples: int = 5,
+        score_margin_multiplier: float = 5.0,
+        bandwidth: float | Literal["scott", "silverman"] = 1.0,
+        optimise_bandwidth: bool = False,
+        kernel: Literal["gaussian", "tophat", "epanechnikov", "exponential", "linear", "cosine"] = "gaussian",
+        n_samples: int = 10000,
+        weight_sum_steps: int = 50,
+        n_jobs: int = -1,
+        model_name: str = "Allocation",
+        decision_boundary: float = 0.5,
+    ) -> None:
+        self.cohort = cohort
+        self.setup_groups(groups, group_col)
+        self.setup_deterioration_feature(det_feature)
+        self.setup_daauc_params(
+            n_bins,
+            acceptable_samples,
+            minimum_samples,
+            score_margin_multiplier,
+            bandwidth,
+            optimise_bandwidth,
+            kernel,
+            n_samples,
+            weight_sum_steps,
+            n_jobs,
+        )
+
+        self.model_name = model_name
+        self.decision_boundary = decision_boundary
+
+        self.group_scores = {}
+        self.group_ksteps = {}
+        self.group_curves = {}  # Stores curve data for each group
+        self.group_ratios = {}  # Stores ratios between each pair of groups
+        self.group_bin_samples = {}  # Stores sample counts for each bin for each group
+        self.group_sub_optimal_bins = {}  # Stores sub-optimal bins for each group
+        self.group_failed_bins = {}  # Stores failed bins for each group
 
     def _gridsearch_bandwidth(self, in_matrix: np.ndarray) -> float:
         """
@@ -383,22 +367,14 @@ class DAIndex(object):
 
     def _deterioration_index(self, in_matrix: np.ndarray, group: str) -> float:
         """
-        Obtain deterioration index
-        in_matrix - the random sample of measurements
-        low_bound/up_nbound - the boundary values of the measurement
-        n_samples - number of bins to use for probability calculation. default is 2000.
-        plot_title - the title of the plot, if generates plot. default is empty string
-        is_discrete - whether the random sample is discrete. NB: this might be overwritten based on bandwidth learned.
-            Small bandwidths will always bring out pulse like PDFs. default is False.
-        prev_discrete_value_offset - the difference between the threshold and the previous legitimate value.
-            default is 1.
-        weight_sum_steps - the number of bins for weighted sum of k-step cutoffs, default is 50
-        reverse - for calculating p(in_matrix<threshold), i.e., the smaller the measure value the more severe a patient.
-            default is False
-        bandwidth - default bandwidth to use if not search bandwidth, default is 1
-        kernel - the kernel to use for KDE, default is gaussian.
-        optimise_bandwidth - whether to use grid search to find optimal bandwidth for in_matrix. default is True
-        do_plot - whether to generate plots, default is True
+        Obtain deterioration index.
+
+        Args:
+            in_matrix (np.ndarray): The input matrix containing the feature values for the group.
+            group (str): The name of the group for which to calculate the deterioration index.
+
+        Returns:
+            float: The deterioration index for the group.
         """
 
         # estimate density function
@@ -449,6 +425,9 @@ class DAIndex(object):
         Raises:
             UserWarning: If the number of samples is sub-optimal or insufficient for DAI calculation.
         """
+        if group not in self.group_scores:
+            raise ValueError(f"Scores for group '{group}' not found. Please run evaluation first.")
+
         lb, ub = bin_bounds
 
         det_list = []
@@ -477,7 +456,7 @@ class DAIndex(object):
     def _get_group_ksteps(self, group: str) -> list[tuple[float, int, float]]:
         def process_bin(s: int, bounds: tuple[float, float]) -> tuple[float, int, float, bool, bool]:
             length, di_ret, sub_opt, failed = self._obtain_da_index(group, bounds)
-            return (s, length, di_ret, sub_opt, failed)
+            return BinResult(s, length, di_ret, sub_opt, failed)
 
         ret = Parallel(n_jobs=self.n_jobs)(
             delayed(process_bin)(s, bounds)
@@ -487,12 +466,12 @@ class DAIndex(object):
         )
 
         # Store step information internally
-        self.group_sub_optimal_bins[group] = {s[0]: s[1] for s in ret if s[3]}
-        self.group_failed_bins[group] = {s[0]: s[1] for s in ret if s[4]}
-        self.group_bin_samples[group] = {s[0]: s[1] for s in ret}
+        self.group_sub_optimal_bins[group] = {s.score: s.length for s in ret if s.sub_opt}
+        self.group_failed_bins[group] = {s.score: s.length for s in ret if s.failed}
+        self.group_bin_samples[group] = {s.score: s.length for s in ret}
 
-        sub_opt_list = ", ".join([f"{s[0]}: {s[1]}" for s in ret if s[3]])
-        failed_list = ", ".join([f"{s[0]}: {s[1]}" for s in ret if s[4]])
+        sub_opt_list = ", ".join([f"{s.score}: {s.length}" for s in ret if s.sub_opt])
+        failed_list = ", ".join([f"{s.score}: {s.length}" for s in ret if s.failed])
         if sub_opt_list or failed_list:
             message = f"\nIssues were encountered during the {group} group calculation:"
             if sub_opt_list:
@@ -500,48 +479,11 @@ class DAIndex(object):
             if failed_list:
                 message += f"\nThere are too few samples for these bin scores: {failed_list}"
             warnings.warn(message, stacklevel=2)
-        return np.array([(s[0], s[1], s[2]) for s in ret if not s[4]])
+        return np.array([(s.score, s.length, s.di_ret) for s in ret if not s.failed])
 
-    def _evaluate_group_pair(self, reference_group: str, other_group: str, rerun: bool, rerun_reference: bool) -> None:
-        if rerun_reference or reference_group not in self.group_ksteps.keys():
-            self.group_ksteps[reference_group] = self._get_group_ksteps(reference_group)
-        if rerun or other_group not in self.group_ksteps.keys():
-            self.group_ksteps[other_group] = self._get_group_ksteps(other_group)
-
-    def _check_group_pair(self, reference_group: str, other_group: str) -> None:
-        assert reference_group in self.groups.keys(), (
-            f"Invalid group name provided for reference_group. Valid group names are {list(self.groups.keys())}"
-        )
-        assert other_group in self.groups.keys(), (
-            f"Invalid group name provided for other_group. Valid group names are {list(self.groups.keys())}"
-        )
-
-    def _evaluate_group_pair_by_predictions(
-        self, predictions_col: str, reference_group: str, other_group: str, rerun: bool, rerun_reference: bool
-    ) -> None:
-        if rerun_reference or reference_group not in self.group_scores.keys():
-            self.group_scores[reference_group] = self.groups[reference_group](self.cohort)[predictions_col].to_numpy()
-        if rerun or other_group not in self.group_scores.keys():
-            self.group_scores[other_group] = self.groups[other_group](self.cohort)[predictions_col].to_numpy()
-        self._evaluate_group_pair(reference_group, other_group, rerun, rerun_reference)
-
-    def evaluate_group_pair_by_predictions(
-        self,
-        predictions_col: str,
-        reference_group: str,
-        other_group: str,
-        rerun: bool = True,
-        n_jobs: int = -1,
-    ) -> tuple:
-        self.n_jobs = n_jobs
-        self._check_group_pair(reference_group, other_group)
-        self._evaluate_group_pair_by_predictions(predictions_col, reference_group, other_group, rerun, rerun)
-        self.group_ratios[(reference_group, other_group)], self.group_figures[(reference_group, other_group)] = (
-            self.get_da_curve(reference_group, other_group)
-        )
-        return self.group_ratios[(reference_group, other_group)], self.group_figures[(reference_group, other_group)]
-
-    def _get_scores(self, group: str, models: list[ProbabilisticModel], feature_list: list[str]) -> np.ndarray:
+    def _get_scores_from_models(
+        self, group: str, models: list[ProbabilisticModel], feature_list: list[str]
+    ) -> np.ndarray:
         """
         Computes the mean predicted probabilities for a list of models.
 
@@ -557,86 +499,6 @@ class DAIndex(object):
             [m.predict_proba(self.groups[group](self.cohort)[feature_list].to_numpy()) for m in models]
         )
         return predicted_probs[:, :, 1].mean(axis=0)
-
-    def _evaluate_group_pair_by_models(
-        self,
-        models: list[ProbabilisticModel],
-        feature_list: list[str],
-        reference_group: str,
-        other_group: str,
-        rerun: bool,
-        rerun_reference: bool,
-    ) -> None:
-        if rerun_reference or reference_group not in self.group_scores.keys():
-            self.group_scores[reference_group] = self._get_scores(reference_group, models, feature_list)
-        if rerun or other_group not in self.group_scores.keys():
-            self.group_scores[other_group] = self._get_scores(other_group, models, feature_list)
-        self._evaluate_group_pair(reference_group, other_group, rerun, rerun_reference)
-
-    def evaluate_group_pair_by_models(
-        self,
-        models: list[ProbabilisticModel] | ProbabilisticModel,
-        feature_list: list[str],
-        reference_group: str,
-        other_group: str,
-        rerun: bool = True,
-        n_jobs: int = -1,
-    ) -> tuple[dict[str, float | str], plt.Figure]:
-        self.n_jobs = n_jobs
-        self._check_group_pair(reference_group, other_group)
-        models = models if isinstance(models, list) else [models]
-        self._evaluate_group_pair_by_models(models, feature_list, reference_group, other_group, rerun, rerun)
-        self.group_ratios[(reference_group, other_group)], self.group_figures[(reference_group, other_group)] = (
-            self.get_da_curve(reference_group, other_group)
-        )
-        return self.group_ratios[(reference_group, other_group)], self.group_figures[(reference_group, other_group)]
-
-    def _check_reference_group(self, reference_group: str) -> None:
-        assert reference_group in self.groups.keys(), (
-            f"Invalid group name provided for reference_group. Valid group names are {list(self.groups.keys())}"
-        )
-
-    def evaluate_all_groups_by_models(
-        self,
-        models: list[ProbabilisticModel] | ProbabilisticModel,
-        feature_list: list[str],
-        reference_group: str,
-        rerun: bool = True,
-        n_jobs: int = -1,
-    ) -> None:
-        self.n_jobs = n_jobs
-        self._check_reference_group(reference_group)
-        models = models if isinstance(models, list) else [models]
-        pbar = tqdm(
-            [*(self.groups.keys() - {reference_group})],
-            desc="Evaluating group",
-            total=len(self.groups) - 1,
-            position=0,
-        )
-        for group in pbar:
-            pbar.set_description(f"Evaluating {group} group")
-            self._evaluate_group_pair_by_models(models, feature_list, reference_group, group, rerun, False)
-            self.group_ratios[(reference_group, group)], self.group_figures[(reference_group, group)] = (
-                self.get_da_curve(reference_group, group)
-            )
-
-    def evaluate_all_groups_by_predictions(
-        self, predictions_col: str, reference_group: str, rerun: bool = True, n_jobs: int = -1
-    ) -> None:
-        self.n_jobs = n_jobs
-        self._check_reference_group(reference_group)
-        pbar = tqdm(
-            [*(self.groups.keys() - {reference_group})],
-            desc="Evaluating group",
-            total=len(self.groups) - 1,
-            position=0,
-        )
-        for group in pbar:
-            pbar.set_description(f"Evaluating {group} group")
-            self._evaluate_group_pair_by_predictions(predictions_col, reference_group, group, rerun, False)
-            self.group_ratios[(reference_group, group)], self.group_figures[(reference_group, group)] = (
-                self.get_da_curve(reference_group, group)
-            )
 
     def _area_under_curve(self, w_data: np.ndarray) -> tuple[float, float]:
         """
@@ -664,181 +526,356 @@ class DAIndex(object):
 
         return area, decision_area
 
-    def _vis_da_indices(self, data: np.ndarray, label: str) -> tuple[float, float, np.ndarray]:
+    def _calculate_group_curve(self, group: str) -> dict[str, float | np.ndarray]:
         """
-        plot dot-line for approximating a DA curve
-        """
-        w_data = data[np.where(data[:, 1] > 0)][:, [0, 2, 1]]
-        a, decision_area = self._area_under_curve(w_data)
-        plt.plot(w_data[:, 0], w_data[:, 1], "-")
-        plt.plot(w_data[:, 0], w_data[:, 1], "o", label=label)
-        return a, decision_area, w_data
+        Calculate curve data for a single group without plotting.
 
-    def _calc_ratios(self, a1: float, a2: float, da1: float, da2: float) -> dict[str, float | str]:
+        Args:
+            group: The name of the group to calculate the curve for.
+
+        Returns:
+            A dictionary containing curve data, areas, and metadata.
+        """
+        if group not in self.group_ksteps:
+            raise ValueError(f"K-steps for group '{group}' not found. Please run evaluation first.")
+
+        data = self.group_ksteps[group]
+        w_data = data[np.where(data[:, 1] > 0)][:, [0, 2, 1]]
+        area, decision_area = self._area_under_curve(w_data)
+
+        det_threshold = self.groups[group].det_threshold or self.det_feature.threshold
+
+        return {
+            "x": w_data[:, 0],
+            "y": w_data[:, 1],
+            "sample_counts": w_data[:, 2],
+            "area": area,
+            "decision_area": decision_area,
+            "det_threshold": det_threshold,
+        }
+
+    def _calculate_group_ratio(self, reference_group: str, other_group: str) -> dict[str, float | str]:
+        """
+        Calculate and return the DAI ratios between a reference group and another group.
+
+        Args:
+            reference_group: The name of the reference group.
+            other_group: The name of the other group to compare against the reference group.
+
+        Returns:
+            A dictionary containing the full and decision DAI ratios.
+        """
+        if reference_group not in self.group_curves or other_group not in self.group_curves:
+            raise ValueError("Group curves not found. Please run evaluation first.")
+        a1, da1 = (self.group_curves[reference_group]["area"], self.group_curves[reference_group]["decision_area"])
+        a2, da2 = (self.group_curves[other_group]["area"], self.group_curves[other_group]["decision_area"])
         ratio = (a2 - a1) / a1
         decision_ratio = ((da2 - da1) / da1) if da1 != 0 else "N/A"
         return {"Full": ratio, "Decision": decision_ratio}
 
-    def get_da_curve(
+    def _calculate_group_ratios(self, rerun: bool = True) -> None:
+        for group1, group2 in itertools.permutations(self.groups.keys(), 2):
+            key = (group1, group2)
+            if rerun or key not in self.group_ratios:
+                self.group_ratios[key] = self._calculate_group_ratio(group1, group2)
+
+    def _check_group(self, group: str, reference: bool = False) -> None:
+        if group not in self.groups.keys():
+            raise KeyError(
+                f"Invalid group name provided{' for reference_group' if reference else ''}."
+                f"Valid group names are {list(self.groups.keys())}"
+            )
+
+    def _validate_group_inputs(self, groups: list[str] | str | None) -> list[str]:
+        if groups is not None:
+            if isinstance(groups, str):
+                groups = [groups]
+            for group in groups:
+                self._check_group(group)
+        else:
+            groups = list(self.groups.keys())
+        return groups
+
+    def _validate_reference_group_inputs(self, reference_group: str, groups: list[str] | str | None) -> list[str]:
+        self._check_group(reference_group, reference=True)
+        return list(set(self._validate_group_inputs(groups)) | {reference_group})
+
+    def _evaluate_groups(
+        self,
+        models: list[ProbabilisticModel] | ProbabilisticModel | None,
+        feature_list: list[str] | None,
+        predictions_col: str | None,
+        reference_group: str,
+        groups: None | str | list[str] = None,
+        rerun: bool = True,
+        n_jobs: int = -1,
+        using_models: bool = True,
+    ) -> None:
+        self.n_jobs = n_jobs
+        groups = self._validate_reference_group_inputs(reference_group, groups)
+        pbar = tqdm(
+            groups,
+            desc="Evaluating",
+            total=len(self.groups) - 1,
+            position=0,
+        )
+        for group in pbar:
+            pbar.set_description(f"Evaluating {group} group")
+            if (rerun or group not in self.group_scores.keys()) and using_models:
+                self.group_scores[group] = self._get_scores_from_models(group, models, feature_list)
+            elif (rerun or group not in self.group_scores.keys()) and not using_models:
+                self.group_scores[group] = self.groups[group](self.cohort)[predictions_col].to_numpy()
+            if rerun or group not in self.group_ksteps.keys():
+                self.group_ksteps[group] = self._get_group_ksteps(group)
+            if rerun or group not in self.group_curves.keys():
+                self.group_curves[group] = self._calculate_group_curve(group)
+        self._calculate_group_ratios(rerun)
+
+    def evaluate_groups_by_predictions(
+        self,
+        predictions_col: str,
+        reference_group: str,
+        groups: str | list[str] | None = None,
+        rerun: bool = True,
+        n_jobs: int = -1,
+    ) -> None:
+        """
+        Calculate the DAI for group(s) based on pre-calculated model predictions
+
+        Args:
+            predictions_col: The column name in the cohort DataFrame that contains the model predictions
+            reference_group: The reference group name
+            groups: Single group name or list of group names to compare. If None, all groups except the reference group
+                will be evaluated
+            rerun: Whether to rerun the evaluation even if results already exist for any of the groups
+            n_jobs: The number of jobs to run in parallel
+        """
+        self._evaluate_groups(
+            models=None,
+            feature_list=None,
+            predictions_col=predictions_col,
+            reference_group=reference_group,
+            groups=groups,
+            rerun=rerun,
+            n_jobs=n_jobs,
+            using_models=False,
+        )
+
+    def evaluate_groups_by_models(
+        self,
+        models: list[ProbabilisticModel] | ProbabilisticModel,
+        feature_list: list[str],
+        reference_group: str,
+        groups: str | list[str] | None = None,
+        rerun: bool = True,
+        n_jobs: int = -1,
+    ) -> None:
+        """
+        Calculate the DAI for group(s) based on model objects
+
+        Args:
+            models: A single model object or a list of trained model objects that have a `predict_proba` method
+            feature_list: A list of column names in the cohort DataFrame to be used as features for prediction
+            reference_group: The reference group name
+            groups: Single group name or list of group names to compare. If None, all groups except the reference group
+                will be evaluated
+            rerun: Whether to rerun the evaluation even if results already exist for the groups
+            n_jobs: The number of jobs to run in parallel
+        """
+        if not isinstance(models, list):
+            models = [models]
+        self._evaluate_groups(
+            models=models,
+            feature_list=feature_list,
+            predictions_col=None,
+            reference_group=reference_group,
+            groups=groups,
+            rerun=rerun,
+            n_jobs=n_jobs,
+            using_models=True,
+        )
+
+    def get_plots(
         self,
         reference_group: str,
-        other_group: str,
-    ) -> tuple[dict[str, float | str], plt.Figure]:
+        groups: str | list[str] | None = None,
+        theme: str = "whitegrid",
+    ) -> plt.Figure:
         """
-        do DA curve visualisation
+        Plot DA curves for selected groups with one reference group highlighted.
+        Uses a seaborn theme for clean defaults. Ratios and thresholds are added
+        to legend labels.
+
+        Args:
+            reference_group: Name of the reference group.
+            groups: A single group name, list of names, or None (all other groups).
+            theme: Seaborn theme (e.g. 'whitegrid', 'darkgrid', 'ticks', etc.)
+
+        Returns:
+            Matplotlib Figure
         """
+        # Apply seaborn theme
+        sns.set_theme(style=theme)
 
-        self._check_group_pair(reference_group, other_group)
-        d1 = self.group_ksteps[reference_group]
-        d2 = self.group_ksteps[other_group]
+        # Validate inputs
+        all_groups = self._validate_reference_group_inputs(reference_group, groups)
 
-        # make two datasets even in terms of max x val
-        x_min = min(np.max(d1[:, 0]), np.max(d2[:, 0]))
-        d1 = np.delete(d1, np.where(d1[:, 0] > x_min), axis=0)
-        d2 = np.delete(d2, np.where(d2[:, 0] > x_min), axis=0)
+        # Ensure curves exist
+        for group in all_groups:
+            if group not in self.group_curves:
+                raise ValueError(f"Curve data for group '{group}' not found. Please run evaluation first.")
 
-        # automatically set x/y limits for better viz
-        # x_max = max(np.max(d1[:, 0]), np.max(d2[:, 0]))
-        y_max = max(np.max(d1[:, 2]), np.max(d2[:, 2]))
+        # Sort groups to ensure reference group is first in the legend
+        all_groups = sorted(all_groups, key=lambda g: 0 if g == reference_group else 1)
 
-        plt.xlim(0, x_min * 1.05)
-        plt.ylim(0, y_max * 1.05)
+        # Prepare figure
+        fig, ax = plt.subplots(figsize=(7, 5))
 
-        # do plots
-        a1, da1, _ = self._vis_da_indices(d1, reference_group)
-        a2, da2, _ = self._vis_da_indices(d2, other_group)
+        # Determine limits
+        x_max = max(np.max(self.group_curves[g]["x"]) for g in all_groups)
+        y_max = max(np.max(self.group_curves[g]["y"]) for g in all_groups)
+        ax.set_xlim(0, x_max * 1.05)
+        ax.set_ylim(0, y_max * 1.05)
 
-        ratios = self._calc_ratios(a1, a2, da1, da2)
+        # Plot each group
+        for group in all_groups:
+            curve = self.group_curves[group]
+            is_ref = group == reference_group
 
-        # figure finishing up
-        plt.xlabel(self.model_name)
-        det_threshold = self.groups[other_group].det_threshold or self.det_feature.threshold
-        inequality_string = ">=" if not self.det_feature.reverse else "<="
-        ylabel_string = f"{self.det_feature.label} {inequality_string} {det_threshold}"
-        det_threshold_reference = self.groups[reference_group].det_threshold or self.det_feature.threshold
-        if det_threshold != det_threshold_reference:
-            ylabel_string += (
-                f" for {other_group} group,\n{self.det_feature.label} {inequality_string}"
-                f" {det_threshold_reference} for {reference_group} group"
-            )
-        plt.ylabel(ylabel_string)
+            # Lookup ratio and threshold
+            ratio_label = ""
+            key = (reference_group, group)
+            if not is_ref and hasattr(self, "group_ratios") and key in self.group_ratios:
+                full_ratio = self.group_ratios[key].get("Full")
+                if full_ratio != "N/A" and full_ratio is not None:
+                    ratio_label = f" | Ratio: {full_ratio:+.3f}"
+                decision_ratio = self.group_ratios[key].get("Decision")
+                if decision_ratio != "N/A" and decision_ratio is not None:
+                    ratio_label += f" ({decision_ratio:+.3f} in decision region)"
 
-        # plot decision region
-        plt.plot([self.decision_boundary, self.decision_boundary], [0, 1], "--", lw=0.8, color="g")
-        plt.axvspan(self.decision_boundary, 1, facecolor="b", alpha=0.1)
+            det_threshold = self.groups[group].det_threshold or self.det_feature.threshold
+            threshold_label = f" | Thr: {det_threshold:.3f}"
 
-        plt.legend(loc="best")
+            # Construct legend label
+            label = f"{group}{' (ref)' if is_ref else ''}{threshold_label}{ratio_label}"
 
-        fig = plt.gcf()
-        plt.close()
+            # Plot with style distinction
+            width = 2.0 if is_ref else 1.2
+            ax.plot(curve["x"], curve["y"], "-", lw=width, label=label)
+            ax.scatter(curve["x"], curve["y"], s=10)
 
-        return ratios, fig
+        # Labels
+        ax.set_xlabel(self.model_name)
+        ax.set_ylabel("Deterioration above threshold for group")
 
-    def present_results(self, reference_group: str, other_group: str) -> None:
-        ratios, fig = (
-            self.group_ratios[(reference_group, other_group)],
-            self.group_figures[(reference_group, other_group)],
+        # Decision boundary marker
+        ax.axvline(self.decision_boundary, ls="--", lw=0.8, color="green", alpha=0.6)
+        ax.axvspan(self.decision_boundary, x_max, facecolor="blue", alpha=0.05)
+
+        # Legend along bottom, ref group leftmost
+        ax.legend(
+            loc="upper center",
+            bbox_to_anchor=(0.5, -0.15),
+            fontsize=8,
+            ncol=2,
+            frameon=False,
         )
-        print(f"Reference group: {reference_group}, Comparison group: {other_group}")
-        print(
-            f"Full AUC Ratio = {(ratios['Full'] * 100):.2f}%, Decision AUC Ratio = {(ratios['Decision'] * 100):.2f}%"
-            if ratios["Decision"] != "N/A"
-            else f"Full AUC Ratio = {(ratios['Full'] * 100):.2f}%, Decision AUC Ratio = N/A"
-        )
-        display(fig)
 
-    def present_all_results(self) -> None:
-        for group_pair in self.group_figures.keys():
-            self.present_results(*group_pair)
+        # Title includes threshold column
+        ax.set_title(f"DA Curves ({self.model_name}) | Feature: {self.det_feature.label}", fontsize=12, pad=10)
 
-    def get_group_ratio(self, reference_group: str, other_group: str) -> dict[str, float | str]:
-        return self.group_ratios[(reference_group, other_group)]
+        fig.tight_layout(rect=[0, 0.05, 1, 1])  # Add extra room for legend
+        plt.close(fig)
+        return fig
 
-    def get_group_figure(self, reference_group: str, other_group: str) -> plt.Figure:
-        return self.group_figures[(reference_group, other_group)]
+    def get_ratios(self) -> pd.DataFrame:
+        """
+        Get the DataFrame of all group ratios.
 
-    def get_all_ratios(self) -> pd.DataFrame:
+        Returns:
+            (pd.DataFrame): A DataFrame containing the ratios between all pairs of groups.
+        """
         df = pd.DataFrame(self.group_ratios).T
         df.index = pd.MultiIndex.from_tuples(df.index, names=["Reference", "Comparison"])
         return df
 
-    def get_all_figures(self) -> dict[tuple[str, str], plt.Figure]:
-        return self.group_figures
-
-    def get_group_bin_samples(self, group: str) -> dict[float, int]:
+    def get_curves(self, groups: str | list[str] | None) -> dict[str, any]:
         """
-        Returns the number of samples used for each bin for the specified group.
+        Get the curve data for the (specified) group(s).
 
         Args:
-            group: The name of the group to get bin sample information for.
+            group (str | list[str] | None): The name(s) of the group(s) to get curve data for, or None for all groups.
 
         Returns:
-            A dictionary mapping bin values to the number of samples used.
+            (dict[str, CurveData]): A dictionary containing the curve data for each specified group.
         """
-        if group not in self.group_bin_samples:
-            raise ValueError(f"No bin information available for group '{group}'. Run evaluation first.")
-        return self.group_bin_samples[group]
+        groups = self._validate_group_inputs(groups)
+        for group in groups:
+            if group not in self.group_curves:
+                raise ValueError(f"Curve data for group '{group}' not found. Please run evaluation first.")
+        if len(groups) == 1:
+            return self.group_curves[groups[0]]
+        else:
+            return {group: self.group_curves[group] for group in groups}
 
-    def get_group_sub_optimal_bins(self, group: str) -> dict[float, int]:
+    def get_bin_samples(self, groups: str | list[str] | None = None) -> dict[float, int] | dict[str, dict[float, int]]:
         """
-        Returns information about sub-optimal bins for the specified group.
-        These are bins where the number of samples was below the preferred threshold
-        but still acceptable.
+        Returns the number of samples used for each bin for the (specified) group(s).
 
         Args:
-            group: The name of the group to get sub-optimal bin information for.
+            group: The name(s) of the group(s) to get bin sample information for, or None for all groups.
 
         Returns:
-            A dictionary mapping bin values to the number of samples used for
-            sub-optimal bins.
+            (dict[float, int] | dict[str, dict[float, int]]): A dictionary mapping bin values to the number of samples
+            used.
         """
-        if group not in self.group_sub_optimal_bins:
-            raise ValueError(f"No bin information available for group '{group}'. Run evaluation first.")
-        return self.group_sub_optimal_bins[group]
+        groups = self._validate_group_inputs(groups)
+        for group in groups:
+            if group not in self.group_bin_samples:
+                raise ValueError(f"No bin information available for group '{group}'. Run evaluation first.")
+        if len(groups) == 1:
+            return self.group_bin_samples[groups[0]]
+        else:
+            return {group: self.group_bin_samples[group] for group in groups}
 
-    def get_group_failed_bins(self, group: str) -> dict[float, int]:
+    def get_sub_optimal_bins(
+        self, groups: str | list[str] | None = None
+    ) -> dict[float, int] | dict[str, dict[float, int]]:
+        """
+        Returns information about sub-optimal bins for the (specified) group(s).
+
+        Args:
+            group: The name(s) of the group(s) to get sub-optimal bin information for, or None for all groups.
+
+        Returns:
+            (dict[float, int] | dict[str, dict[float, int]]): A dictionary mapping bin scores to the number of samples
+            used for sub-optimal bins.
+        """
+        groups = self._validate_group_inputs(groups)
+        for group in groups:
+            if group not in self.group_sub_optimal_bins:
+                raise ValueError(f"No bin information available for group '{group}'. Run evaluation first.")
+        if len(groups) == 1:
+            return self.group_sub_optimal_bins[groups[0]]
+        else:
+            return {group: self.group_sub_optimal_bins[group] for group in groups}
+
+    def get_failed_bins(self, groups: str | list[str] | None = None) -> dict[float, int] | dict[str, dict[float, int]]:
         """
         Returns information about failed bins for the specified group.
-        These are bins where the number of samples was below the minimum threshold
-        and the bin was excluded from the analysis.
 
         Args:
-            group: The name of the group to get failed bin information for.
+            group: The name(s) of the group(s) to get failed bin information for, or None for all groups.
 
         Returns:
-            A dictionary mapping bin scores to the number of samples used for
-            failed bins.
+            (dict[float, int] | dict[str, dict[float, int]]): A dictionary mapping bin scores to the number of samples
+            used for failed bins.
         """
-        if group not in self.group_failed_bins:
-            raise ValueError(f"No bin information available for group '{group}'. Run evaluation first.")
-        return self.group_failed_bins[group]
-
-    def get_all_groups_bin_samples(self) -> dict[str, dict[float, int]]:
-        """
-        Returns the number of samples used for each bin for all evaluated groups.
-
-        Returns:
-            A dictionary mapping group names to dictionaries of bin scores and
-            their corresponding sample counts.
-        """
-        return self.group_bin_samples.copy()
-
-    def get_all_groups_sub_optimal_bins(self) -> dict[str, dict[float, int]]:
-        """
-        Returns information about sub-optimal bins for all evaluated groups.
-
-        Returns:
-            A dictionary mapping group names to dictionaries of bin scores and
-            their corresponding sample counts for sub-optimal bins.
-        """
-        return self.group_sub_optimal_bins.copy()
-
-    def get_all_groups_failed_bins(self) -> dict[str, dict[float, int]]:
-        """
-        Returns information about failed bins for all evaluated groups.
-
-        Returns:
-            A dictionary mapping group names to dictionaries of bin scores and
-            their corresponding sample counts for failed bins.
-        """
-        return self.group_failed_bins.copy()
+        groups = self._validate_group_inputs(groups)
+        for group in groups:
+            if group not in self.group_failed_bins:
+                raise ValueError(f"No bin information available for group '{group}'. Run evaluation first.")
+        if len(groups) == 1:
+            return self.group_failed_bins[groups[0]]
+        else:
+            return {group: self.group_failed_bins[group] for group in groups}
