@@ -159,8 +159,8 @@ class TestDAIndexInitialization:
         assert dai.model_name == "Allocation"  # default
 
         # Check new tracking attributes are initialized
-        assert dai.group_sub_optimal_steps == {}
-        assert dai.group_failed_steps == {}
+        assert dai.group_sub_optimal_bins == {}
+        assert dai.group_failed_bins == {}
         assert dai.group_step_samples == {}
 
     def test_init_custom_parameters(
@@ -296,7 +296,7 @@ class TestDAIndexStepTracking:
         assert all(isinstance(k, (int, float)) for k in step_samples.keys())
         assert all(isinstance(v, (int, np.integer)) for v in step_samples.values())
 
-    def test_get_group_sub_optimal_steps(self, dai_index: DAIndex, sample_cohort: pd.DataFrame) -> None:
+    def test_get_group_sub_optimal_bins(self, dai_index: DAIndex, sample_cohort: pd.DataFrame) -> None:
         """Test getting sub-optimal step information."""
         dai_index.cohort = sample_cohort
 
@@ -306,12 +306,12 @@ class TestDAIndexStepTracking:
         )
 
         # Test getting sub-optimal steps
-        sub_optimal = dai_index.get_group_sub_optimal_steps("Group A")
+        sub_optimal = dai_index.get_group_sub_optimal_bins("Group A")
 
         assert isinstance(sub_optimal, dict)
         # sub_optimal might be empty if all steps had optimal sample counts
 
-    def test_get_group_failed_steps(self, dai_index: DAIndex, sample_cohort: pd.DataFrame) -> None:
+    def test_get_group_failed_bins(self, dai_index: DAIndex, sample_cohort: pd.DataFrame) -> None:
         """Test getting failed step information."""
         dai_index.cohort = sample_cohort
 
@@ -321,7 +321,7 @@ class TestDAIndexStepTracking:
         )
 
         # Test getting failed steps
-        failed = dai_index.get_group_failed_steps("Group A")
+        failed = dai_index.get_group_failed_bins("Group A")
 
         assert isinstance(failed, dict)
         # failed might be empty if no steps failed
@@ -352,10 +352,10 @@ class TestDAIndexStepTracking:
             dai_index.get_group_step_samples("Group A")
 
         with pytest.raises(ValueError, match="No step information available"):
-            dai_index.get_group_sub_optimal_steps("Group A")
+            dai_index.get_group_sub_optimal_bins("Group A")
 
         with pytest.raises(ValueError, match="No step information available"):
-            dai_index.get_group_failed_steps("Group A")
+            dai_index.get_group_failed_bins("Group A")
 
 
 class TestDAIndexResultAccess:

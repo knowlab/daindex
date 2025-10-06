@@ -150,15 +150,15 @@ class DAIndex(object):
         det_feature: A `DeteriorationFeature` object representing the feature upon which to calculate the DAI.
         group_col: Optional column name in the cohort DataFrame that contains the group definition.
             Specifying this overrides the `col` attribute of the `Group` objects.
-        steps: The number of steps to use for the DAI calculation.
-        acceptable_steps: The acceptable number of steps to use for the DAI calculation.
-        minimum_steps: The minimum number of steps to use for the DAI calculation.
+        n_bins: The number of bins to use for the DAI calculation.
+        acceptable_samples: The acceptable number of samples to use for each bin's DAI calculation.
+        minimum_samples: The minimum number of samples to use for each bin's DAI calculation.
         score_margin_multiplier: The multiplier to use for the score margin.
         bandwidth: The bandwidth to use for the KDE.
         optimise_bandwidth: Whether to search for the optimal bandwidth.
         kernel: The kernel to use for the KDE.
         n_samples: The number of samples to use for the KDE.
-        weight_sum_steps: The number of bins for the weighted sum of k-step cutoffs.
+        weight_sum_steps: The number of steps for the weighted sum of k-step cutoffs.
         n_jobs: The number of jobs to run in parallel.
         model_name: The name of the model to use in the plots.
         decision_boundary: The decision boundary for the DA curve. Defaults to 0.5.
@@ -179,12 +179,12 @@ class DAIndex(object):
         get_group_figure: Get the DAI figure for a pair of groups.
         get_all_ratios: Get the DAI ratios for all group pairs.
         get_all_figures: Get the DAI figures for all group pairs.
-        get_group_step_samples: Get the number of samples used for each step for a specific group.
-        get_group_sub_optimal_steps: Get information about sub-optimal steps for a specific group.
-        get_group_failed_steps: Get information about failed steps for a specific group.
-        get_all_groups_step_samples: Get step sample information for all evaluated groups.
-        get_all_groups_sub_optimal_steps: Get sub-optimal step information for all evaluated groups.
-        get_all_groups_failed_steps: Get failed step information for all evaluated groups.
+        get_group_bin_samples: Get the number of samples used for each bin for a specific group.
+        get_group_sub_optimal_bins: Get information about sub-optimal bins for a specific group.
+        get_group_failed_bins: Get information about failed bins for a specific group.
+        get_all_groups_bin_samples: Get bin sample information for all evaluated groups.
+        get_all_groups_sub_optimal_bins: Get sub-optimal bin information for all evaluated groups.
+        get_all_groups_failed_bins: Get failed bin information for all evaluated groups.
     """
 
     def __init__(
@@ -193,15 +193,15 @@ class DAIndex(object):
         groups: Group | list[Group],
         det_feature: DeteriorationFeature,
         group_col: str = None,
-        steps: int = 50,
-        acceptable_steps: int = 20,
-        minimum_steps: int = 5,
+        n_bins: int = 50,
+        acceptable_samples: int = 20,
+        minimum_samples: int = 5,
         score_margin_multiplier: float = 5.0,
         bandwidth: float | Literal["scott", "silverman"] = 1.0,
         optimise_bandwidth: bool = False,
         kernel: Literal["gaussian", "tophat", "epanechnikov", "exponential", "linear", "cosine"] = "gaussian",
         n_samples: int = 10000,
-        weight_sum_steps: int = 10,
+        weight_sum_steps: int = 50,
         n_jobs: int = -1,
         model_name: str = None,
         decision_boundary: float = 0.5,
@@ -210,9 +210,9 @@ class DAIndex(object):
         self.setup_groups(groups, group_col)
         self.setup_deterioration_feature(det_feature)
         self.setup_daauc_params(
-            steps,
-            acceptable_steps,
-            minimum_steps,
+            n_bins,
+            acceptable_samples,
+            minimum_samples,
             score_margin_multiplier,
             bandwidth,
             optimise_bandwidth,
@@ -230,10 +230,9 @@ class DAIndex(object):
         self.group_ratios = {}
         self.group_figures = {}
         self.issues = []
-        # New attributes to track step information
-        self.group_sub_optimal_steps = {}  # Stores sub-optimal steps for each group
-        self.group_failed_steps = {}  # Stores failed steps for each group
-        self.group_step_samples = {}  # Stores sample counts for each step for each group
+        self.group_sub_optimal_bins = {}  # Stores sub-optimal bins for each group
+        self.group_failed_bins = {}  # Stores failed bins for each group
+        self.group_bin_samples = {}  # Stores sample counts for each bin for each group
 
     def setup_groups(self, groups: Group | list[Group], group_col: str = None) -> None:
         if not isinstance(groups, list):
@@ -246,28 +245,26 @@ class DAIndex(object):
 
     def setup_daauc_params(
         self,
-        steps: int = 50,
-        acceptable_steps: int = 20,
-        minimum_steps: int = 5,
+        n_bins: int = 50,
+        acceptable_samples: int = 20,
+        minimum_samples: int = 5,
         score_margin_multiplier: float = 5.0,
         bandwidth: float | Literal["scott", "silverman"] = 1.0,
         optimise_bandwidth: bool = False,
         kernel: Literal["gaussian", "tophat", "epanechnikov", "exponential", "linear", "cosine"] = "gaussian",
         n_samples: int = 10000,
-        weight_sum_steps: int = 10,
+        weight_sum_steps: int = 50,
         n_jobs: int = -1,
     ) -> None:
-        self.steps = steps
-        self.acceptable_steps = acceptable_steps
-        self.minimum_steps = minimum_steps
+        self.acceptable_samples = acceptable_samples
+        self.minimum_samples = minimum_samples
         self.score_margin_multiplier = score_margin_multiplier
-        self.step_scores = np.linspace(0, 1, self.steps + 1)[1:] - 1 / (2 * self.steps)
-        self.step_score_bounds = {
+        self.bins = {
             s: (
-                max(0.0, s - (1 / (2 * self.steps)) * self.score_margin_multiplier),
-                min(1.0, s + (1 / (2 * self.steps)) * self.score_margin_multiplier),
+                max(0.0, s - (1 / (2 * n_bins)) * self.score_margin_multiplier),
+                min(1.0, s + (1 / (2 * n_bins)) * self.score_margin_multiplier),
             )
-            for s in self.step_scores
+            for s in np.linspace(0, 1, n_bins + 1)[1:] - 1 / (2 * n_bins)
         }
         self.bandwidth = bandwidth
         self.optimise_bandwidth = optimise_bandwidth
@@ -395,7 +392,7 @@ class DAIndex(object):
             Small bandwidths will always bring out pulse like PDFs. default is False.
         prev_discrete_value_offset - the difference between the threshold and the previous legitimate value.
             default is 1.
-        weight_sum_steps - the number of bins for weighted sum of k-step cutoffs, default is 20
+        weight_sum_steps - the number of bins for weighted sum of k-step cutoffs, default is 50
         reverse - for calculating p(in_matrix<threshold), i.e., the smaller the measure value the more severe a patient.
             default is False
         bandwidth - default bandwidth to use if not search bandwidth, default is 1
@@ -434,13 +431,13 @@ class DAIndex(object):
 
         return round(sqs, 6)
 
-    def _obtain_da_index(self, group: str, score_bounds: tuple[float, float]) -> tuple[int, float, bool, bool]:
+    def _obtain_da_index(self, group: str, bin_bounds: tuple[float, float]) -> tuple[int, float, bool, bool]:
         """
         Calculates the Deterioration Allocation Index (DAI) for a given cohort.
 
         Args:
             group: The name of the group for which to calculate the DAI.
-            score_bounds: A tuple containing the lower and upper bounds of the score range to consider.
+            bin_bounds: A tuple containing the lower and upper bounds of the score range to consider.
 
         Returns:
             A tuple containing:
@@ -452,7 +449,7 @@ class DAIndex(object):
         Raises:
             UserWarning: If the number of samples is sub-optimal or insufficient for DAI calculation.
         """
-        lb, ub = score_bounds
+        lb, ub = bin_bounds
 
         det_list = []
         i = 0
@@ -468,9 +465,9 @@ class DAIndex(object):
                     det_list.append(r[self.det_feature.col])
             i += 1
 
-        if len(det_list) < self.minimum_steps:
+        if len(det_list) < self.minimum_samples:
             return len(det_list), 0.0, False, True
-        elif len(det_list) < self.acceptable_steps:
+        elif len(det_list) < self.acceptable_samples:
             sub_opt = True
 
         in_matrix = np.array(det_list)
@@ -478,32 +475,30 @@ class DAIndex(object):
         return len(det_list), di_ret, sub_opt, False
 
     def _get_group_ksteps(self, group: str) -> list[tuple[float, int, float]]:
-        def process_step(s: int) -> tuple[float, int, float, bool, bool]:
-            length, di_ret, sub_opt, failed = self._obtain_da_index(group, self.step_score_bounds[s])
+        def process_bin(s: int, bounds: tuple[float, float]) -> tuple[float, int, float, bool, bool]:
+            length, di_ret, sub_opt, failed = self._obtain_da_index(group, bounds)
             return (s, length, di_ret, sub_opt, failed)
 
         ret = Parallel(n_jobs=self.n_jobs)(
-            delayed(process_step)(s)
-            for s in tqdm(self.step_scores, desc=f"Calculating k-steps for '{group}' group", position=1, leave=False)
+            delayed(process_bin)(s, bounds)
+            for s, bounds in tqdm(
+                self.bins.items(), desc=f"Calculating k-steps for '{group}' group", position=1, leave=False
+            )
         )
 
         # Store step information internally
-        sub_opt_steps = {s[0]: s[1] for s in ret if s[3]}
-        failed_steps = {s[0]: s[1] for s in ret if s[4]}
-        step_samples = {s[0]: s[1] for s in ret}
-
-        self.group_sub_optimal_steps[group] = sub_opt_steps
-        self.group_failed_steps[group] = failed_steps
-        self.group_step_samples[group] = step_samples
+        self.group_sub_optimal_bins[group] = {s[0]: s[1] for s in ret if s[3]}
+        self.group_failed_bins[group] = {s[0]: s[1] for s in ret if s[4]}
+        self.group_bin_samples[group] = {s[0]: s[1] for s in ret}
 
         sub_opt_list = ", ".join([f"{s[0]}: {s[1]}" for s in ret if s[3]])
         failed_list = ", ".join([f"{s[0]}: {s[1]}" for s in ret if s[4]])
         if sub_opt_list or failed_list:
             message = f"\nIssues were encountered during the {group} group calculation:"
             if sub_opt_list:
-                message += f"\nThere are a sub-optimal number of samples for these scores: {sub_opt_list}"
+                message += f"\nThere are a sub-optimal number of samples for these bin scores: {sub_opt_list}"
             if failed_list:
-                message += f"\nThere are too few samples for these scores: {failed_list}"
+                message += f"\nThere are too few samples for these bin scores: {failed_list}"
             warnings.warn(message, stacklevel=2)
         return np.array([(s[0], s[1], s[2]) for s in ret if not s[4]])
 
@@ -770,80 +765,80 @@ class DAIndex(object):
     def get_all_figures(self) -> dict[tuple[str, str], plt.Figure]:
         return self.group_figures
 
-    def get_group_step_samples(self, group: str) -> dict[float, int]:
+    def get_group_bin_samples(self, group: str) -> dict[float, int]:
         """
-        Returns the number of samples used for each step for the specified group.
+        Returns the number of samples used for each bin for the specified group.
 
         Args:
-            group: The name of the group to get step sample information for.
+            group: The name of the group to get bin sample information for.
 
         Returns:
-            A dictionary mapping step scores to the number of samples used.
+            A dictionary mapping bin values to the number of samples used.
         """
-        if group not in self.group_step_samples:
-            raise ValueError(f"No step information available for group '{group}'. Run evaluation first.")
-        return self.group_step_samples[group]
+        if group not in self.group_bin_samples:
+            raise ValueError(f"No bin information available for group '{group}'. Run evaluation first.")
+        return self.group_bin_samples[group]
 
-    def get_group_sub_optimal_steps(self, group: str) -> dict[float, int]:
+    def get_group_sub_optimal_bins(self, group: str) -> dict[float, int]:
         """
-        Returns information about sub-optimal steps for the specified group.
-        These are steps where the number of samples was below the preferred threshold
+        Returns information about sub-optimal bins for the specified group.
+        These are bins where the number of samples was below the preferred threshold
         but still acceptable.
 
         Args:
-            group: The name of the group to get sub-optimal step information for.
+            group: The name of the group to get sub-optimal bin information for.
 
         Returns:
-            A dictionary mapping step scores to the number of samples used for
-            sub-optimal steps.
+            A dictionary mapping bin values to the number of samples used for
+            sub-optimal bins.
         """
-        if group not in self.group_sub_optimal_steps:
-            raise ValueError(f"No step information available for group '{group}'. Run evaluation first.")
-        return self.group_sub_optimal_steps[group]
+        if group not in self.group_sub_optimal_bins:
+            raise ValueError(f"No bin information available for group '{group}'. Run evaluation first.")
+        return self.group_sub_optimal_bins[group]
 
-    def get_group_failed_steps(self, group: str) -> dict[float, int]:
+    def get_group_failed_bins(self, group: str) -> dict[float, int]:
         """
-        Returns information about failed steps for the specified group.
-        These are steps where the number of samples was below the minimum threshold
-        and the step was excluded from the analysis.
+        Returns information about failed bins for the specified group.
+        These are bins where the number of samples was below the minimum threshold
+        and the bin was excluded from the analysis.
 
         Args:
-            group: The name of the group to get failed step information for.
+            group: The name of the group to get failed bin information for.
 
         Returns:
-            A dictionary mapping step scores to the number of samples used for
-            failed steps.
+            A dictionary mapping bin scores to the number of samples used for
+            failed bins.
         """
-        if group not in self.group_failed_steps:
-            raise ValueError(f"No step information available for group '{group}'. Run evaluation first.")
-        return self.group_failed_steps[group]
+        if group not in self.group_failed_bins:
+            raise ValueError(f"No bin information available for group '{group}'. Run evaluation first.")
+        return self.group_failed_bins[group]
 
-    def get_all_groups_step_samples(self) -> dict[str, dict[float, int]]:
+    def get_all_groups_bin_samples(self) -> dict[str, dict[float, int]]:
         """
-        Returns the number of samples used for each step for all evaluated groups.
+        Returns the number of samples used for each bin for all evaluated groups.
 
         Returns:
-            A dictionary mapping group names to dictionaries of step scores and
+            A dictionary mapping group names to dictionaries of bin scores and
             their corresponding sample counts.
         """
-        return self.group_step_samples.copy()
+        return self.group_bin_samples.copy()
 
-    def get_all_groups_sub_optimal_steps(self) -> dict[str, dict[float, int]]:
+    def get_all_groups_sub_optimal_bins(self) -> dict[str, dict[float, int]]:
         """
-        Returns information about sub-optimal steps for all evaluated groups.
-
-        Returns:
-            A dictionary mapping group names to dictionaries of step scores and
-            their corresponding sample counts for sub-optimal steps.
-        """
-        return self.group_sub_optimal_steps.copy()
-
-    def get_all_groups_failed_steps(self) -> dict[str, dict[float, int]]:
-        """
-        Returns information about failed steps for all evaluated groups.
+        Returns information about sub-optimal bins for all evaluated groups.
 
         Returns:
-            A dictionary mapping group names to dictionaries of step scores and
-            their corresponding sample counts for failed steps.
+            A dictionary mapping group names to dictionaries of bin scores and
+            their corresponding sample counts for sub-optimal bins.
         """
-        return self.group_failed_steps.copy()
+        return self.group_sub_optimal_bins.copy()
+
+    def get_all_groups_failed_bins(self) -> dict[str, dict[float, int]]:
+        """
+        Returns information about failed bins for all evaluated groups.
+
+        Returns:
+            A dictionary mapping group names to dictionaries of bin scores and
+            their corresponding sample counts for failed bins.
+        """
+        return self.group_failed_bins.copy()
