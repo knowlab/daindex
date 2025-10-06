@@ -139,14 +139,15 @@ class DAIndex(object):
     We compare the DAI between two groups relative to a given model's predictions. This then gives us a measure of how
     fair the model's predictions are across the two groups.
 
-    1. This class should be instantiated first with a `DetertiorationFeature` object and a list of `Group` objects.
+    1. This class should be instantiated first with a `DeteriorationFeature` object and a list of `Group` objects.
     2. The `evaluate_groups_by_predictions` or `evaluate_groups_by_models` methods can then be called to calculate
     the DAI for a reference and list of groups.
-    3. The results can be accessed using the `get_group_ratio` and `get_group_figures` methods (with a reference and
-    other group(s)), or printed using the `present_results` and `present_all_results` methods.
+    3. The results can be accessed using the `get_plots`, `get_ratios`, and `get_curves` methods.
+    4. Any issues during the calculations are raised as warnings, and can be accessed using the `get_sub_optimal_bins`,
+    `get_failed_bins`, and `get_bin_samples` methods.
 
-    Individual group curve data can be accessed via `get_group_curves` and `get_all_group_curves` methods
-    for custom plotting.
+    All of the functions in 3 can be called without arguments to return results for all groups, or with a single group /
+    list of groups to return results for those groups only.
 
     Args:
         cohort: The DataFrame containing the data for the cohort.
@@ -171,7 +172,41 @@ class DAIndex(object):
         setup_groups: Set up the groups for the DAI calculation.
         setup_daauc_params: Set up the parameters for the DAI calculation.
         setup_deterioration_feature: Set up the deterioration feature for the DAI calculation.
+        evaluate_groups_by_predictions: Calculate the DAI for group(s) based on pre-calculated model predictions.
+        evaluate_groups_by_models: Calculate the DAI for group(s) based on a list of trained models.
+        get_plots: Get the DAI plots for the (specified) group(s).
+        get_ratios: Get the DAI ratios for the (specified) group(s).
+        get_curves: Get the curve data for the (specified) group(s).
+        get_sub_optimal_bins: Get information about any sub-optimal bins for the (specified) group(s).
+        get_failed_bins: Get information about any failed bins for the (specified) group(s).
+        get_bin_samples: Get the number of samples used for each bin for the (specified) group(s).
 
+    Raises:
+        ValueError: If the group names provided to any method are not valid.
+        UserWarning: If there are any issues during the DAI calculations, such as sub-optimal or insufficient samples.
+
+    Examples:
+        >>> import pandas as pd
+        >>> from sklearn.ensemble import RandomForestClassifier
+        >>> from daindex import DAIndex, DeteriorationFeature, Group
+        >>> cohort = pd.DataFrame(
+        ...     {
+        ...         "age": [25, 35, 45, 55, 65, 75, 85, 95],
+        ...         "sex": ["M", "F", "M", "F", "M", "F", "M", "F"],
+        ...         "feature_1": [0.1, 0.4, 0.35, 0.8, 0.65, 0.9, 0.85, 0.95],
+        ...         "feature_2": [1, 0, 1, 0, 1, 0, 1, 0],
+        ...         "deterioration": [0.2, 0.3, 0.5, 0.7, 0.6, 0.8, 0.9, 1.0],
+        ...         "outcome": [0, 0, 0, 1, 1, 1, 1, 1],
+        ...     }
+        ... )
+        >>> det_feature = DeteriorationFeature(col="deterioration", threshold=0.5)
+        >>> group_1 = Group(name="Male", definition="M", col="sex")
+        >>> group_2 = Group(name="Female", definition="F", col="sex")
+        >>> dai = DAIndex(cohort, groups=[group_1, group_2], det_feature=det_feature)
+        >>> model = RandomForestClassifier()
+        >>> model.fit(cohort[["feature_1", "feature_2"]], cohort["outcome"])
+        >>> dai.evaluate_groups_by_models(model, feature_list=["feature_1", "feature_2"], reference_group="Male")
+        >>> dai.get_plots(reference_group="Male")
     """
 
     def setup_groups(self, groups: list[Group], group_col: str = None) -> None:
@@ -186,7 +221,7 @@ class DAIndex(object):
         n_bins: int = 50,
         acceptable_samples: int = 20,
         minimum_samples: int = 5,
-        score_margin_multiplier: float = 5.0,
+        score_margin_multiplier: float = 2.0,
         bandwidth: float | Literal["scott", "silverman"] = 1.0,
         optimise_bandwidth: bool = False,
         kernel: Literal["gaussian", "tophat", "epanechnikov", "exponential", "linear", "cosine"] = "gaussian",
@@ -225,7 +260,7 @@ class DAIndex(object):
         n_bins: int = 50,
         acceptable_samples: int = 20,
         minimum_samples: int = 5,
-        score_margin_multiplier: float = 5.0,
+        score_margin_multiplier: float = 2.0,
         bandwidth: float | Literal["scott", "silverman"] = 1.0,
         optimise_bandwidth: bool = False,
         kernel: Literal["gaussian", "tophat", "epanechnikov", "exponential", "linear", "cosine"] = "gaussian",
@@ -453,7 +488,7 @@ class DAIndex(object):
         di_ret = self._deterioration_index(in_matrix[~np.isnan(in_matrix)].reshape(-1, 1), group)
         return len(det_list), di_ret, sub_opt, False
 
-    def _get_group_ksteps(self, group: str) -> list[tuple[float, int, float]]:
+    def _get_group_ksteps(self, group: str) -> np.ndarray:
         def process_bin(s: int, bounds: tuple[float, float]) -> tuple[float, int, float, bool, bool]:
             length, di_ret, sub_opt, failed = self._obtain_da_index(group, bounds)
             return BinResult(s, length, di_ret, sub_opt, failed)
@@ -573,8 +608,8 @@ class DAIndex(object):
         decision_ratio = ((da2 - da1) / da1) if da1 != 0 else "N/A"
         return {"Full": ratio, "Decision": decision_ratio}
 
-    def _calculate_group_ratios(self, rerun: bool = True) -> None:
-        for group1, group2 in itertools.permutations(self.groups.keys(), 2):
+    def _calculate_group_ratios(self, groups: list[Group], rerun: bool = True) -> None:
+        for group1, group2 in itertools.permutations(groups, 2):
             key = (group1, group2)
             if rerun or key not in self.group_ratios:
                 self.group_ratios[key] = self._calculate_group_ratio(group1, group2)
@@ -583,7 +618,7 @@ class DAIndex(object):
         if group not in self.groups.keys():
             raise KeyError(
                 f"Invalid group name provided{' for reference_group' if reference else ''}."
-                f"Valid group names are {list(self.groups.keys())}"
+                f" Valid group names are {list(self.groups.keys())}"
             )
 
     def _validate_group_inputs(self, groups: list[str] | str | None) -> list[str]:
@@ -613,12 +648,7 @@ class DAIndex(object):
     ) -> None:
         self.n_jobs = n_jobs
         groups = self._validate_reference_group_inputs(reference_group, groups)
-        pbar = tqdm(
-            groups,
-            desc="Evaluating",
-            total=len(self.groups) - 1,
-            position=0,
-        )
+        pbar = tqdm(groups, desc="Evaluating", total=len(groups), position=0)
         for group in pbar:
             pbar.set_description(f"Evaluating {group} group")
             if (rerun or group not in self.group_scores.keys()) and using_models:
@@ -629,7 +659,7 @@ class DAIndex(object):
                 self.group_ksteps[group] = self._get_group_ksteps(group)
             if rerun or group not in self.group_curves.keys():
                 self.group_curves[group] = self._calculate_group_curve(group)
-        self._calculate_group_ratios(rerun)
+        self._calculate_group_ratios(groups, rerun)
 
     def evaluate_groups_by_predictions(
         self,
@@ -799,12 +829,14 @@ class DAIndex(object):
         df.index = pd.MultiIndex.from_tuples(df.index, names=["Reference", "Comparison"])
         return df
 
-    def get_curves(self, groups: str | list[str] | None) -> dict[str, any]:
+    def get_curves(
+        self, groups: str | list[str] | None = None
+    ) -> dict[str, float | np.ndarray] | dict[str, dict[str, float | np.ndarray]]:
         """
         Get the curve data for the (specified) group(s).
 
         Args:
-            group (str | list[str] | None): The name(s) of the group(s) to get curve data for, or None for all groups.
+            groups (str | list[str] | None): The name(s) of the group(s) to get curve data for, or None for all groups.
 
         Returns:
             (dict[str, CurveData]): A dictionary containing the curve data for each specified group.
@@ -823,7 +855,8 @@ class DAIndex(object):
         Returns the number of samples used for each bin for the (specified) group(s).
 
         Args:
-            group: The name(s) of the group(s) to get bin sample information for, or None for all groups.
+            groups (str | list[str] | None): The name(s) of the group(s) to get bin sample information for, or None for
+            all groups.
 
         Returns:
             (dict[float, int] | dict[str, dict[float, int]]): A dictionary mapping bin values to the number of samples
@@ -845,7 +878,8 @@ class DAIndex(object):
         Returns information about sub-optimal bins for the (specified) group(s).
 
         Args:
-            group: The name(s) of the group(s) to get sub-optimal bin information for, or None for all groups.
+            groups (str | list[str] | None): The name(s) of the group(s) to get sub-optimal bin information for, or None
+            for all groups.
 
         Returns:
             (dict[float, int] | dict[str, dict[float, int]]): A dictionary mapping bin scores to the number of samples
@@ -862,10 +896,11 @@ class DAIndex(object):
 
     def get_failed_bins(self, groups: str | list[str] | None = None) -> dict[float, int] | dict[str, dict[float, int]]:
         """
-        Returns information about failed bins for the specified group.
+        Returns information about failed bins for the (specified) group(s).
 
         Args:
-            group: The name(s) of the group(s) to get failed bin information for, or None for all groups.
+            groups (str | list[str] | None): The name(s) of the group(s) to get failed bin information for, or None for
+            all groups.
 
         Returns:
             (dict[float, int] | dict[str, dict[float, int]]): A dictionary mapping bin scores to the number of samples
