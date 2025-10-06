@@ -757,7 +757,7 @@ class DAIndex(object):
             threshold_label = f" | Thr: {det_threshold:.3f}"
 
             # Construct legend label
-            label = f"{group}{' (ref)' if is_ref else ''}{threshold_label}{ratio_label}"
+            label = f"{group}{' (reference group)' if is_ref else ''}{threshold_label}{ratio_label}"
 
             # Plot with style distinction
             width = 2.0 if is_ref else 1.2
@@ -769,8 +769,8 @@ class DAIndex(object):
         ax.set_ylabel("Deterioration above threshold for group")
 
         # Decision boundary marker
-        ax.axvline(self.decision_boundary, ls="--", lw=0.8, color="green", alpha=0.6)
-        ax.axvspan(self.decision_boundary, x_max, facecolor="blue", alpha=0.05)
+        ax.axvline(self.decision_boundary, ls="--", lw=0.8, color="blue", alpha=0.6)
+        ax.axvspan(self.decision_boundary, ax.get_xlim()[1], facecolor="blue", alpha=0.05)
 
         # Legend along bottom, ref group leftmost
         ax.legend(
