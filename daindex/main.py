@@ -151,8 +151,9 @@ class DAIndex(object):
         group_col: Optional column name in the cohort DataFrame that contains the group definition.
             Specifying this overrides the `col` attribute of the `Group` objects.
         steps: The number of steps to use for the DAI calculation.
+        acceptable_steps: The acceptable number of steps to use for the DAI calculation.
+        minimum_steps: The minimum number of steps to use for the DAI calculation.
         score_margin_multiplier: The multiplier to use for the score margin.
-        det_list_lengths: A list of acceptable lengths for the det_list, in descending order.
         bandwidth: The bandwidth to use for the KDE.
         optimise_bandwidth: Whether to search for the optimal bandwidth.
         kernel: The kernel to use for the KDE.
@@ -193,8 +194,9 @@ class DAIndex(object):
         det_feature: DeteriorationFeature,
         group_col: str = None,
         steps: int = 50,
+        acceptable_steps: int = 20,
+        minimum_steps: int = 5,
         score_margin_multiplier: float = 5.0,
-        det_list_lengths: list[int] = [20, 10, 5],
         bandwidth: float | Literal["scott", "silverman"] = 1.0,
         optimise_bandwidth: bool = False,
         kernel: Literal["gaussian", "tophat", "epanechnikov", "exponential", "linear", "cosine"] = "gaussian",
@@ -209,8 +211,9 @@ class DAIndex(object):
         self.setup_deterioration_feature(det_feature)
         self.setup_daauc_params(
             steps,
+            acceptable_steps,
+            minimum_steps,
             score_margin_multiplier,
-            det_list_lengths,
             bandwidth,
             optimise_bandwidth,
             kernel,
@@ -244,8 +247,9 @@ class DAIndex(object):
     def setup_daauc_params(
         self,
         steps: int = 50,
+        acceptable_steps: int = 20,
+        minimum_steps: int = 5,
         score_margin_multiplier: float = 5.0,
-        det_list_lengths: list[int] = [20, 10, 5],
         bandwidth: float | Literal["scott", "silverman"] = 1.0,
         optimise_bandwidth: bool = False,
         kernel: Literal["gaussian", "tophat", "epanechnikov", "exponential", "linear", "cosine"] = "gaussian",
@@ -254,6 +258,8 @@ class DAIndex(object):
         n_jobs: int = -1,
     ) -> None:
         self.steps = steps
+        self.acceptable_steps = acceptable_steps
+        self.minimum_steps = minimum_steps
         self.score_margin_multiplier = score_margin_multiplier
         self.step_scores = np.linspace(0, 1, self.steps + 1)[1:] - 1 / (2 * self.steps)
         self.step_score_bounds = {
@@ -263,8 +269,6 @@ class DAIndex(object):
             )
             for s in self.step_scores
         }
-        det_list_lengths.sort(reverse=True)
-        self.det_list_lengths = det_list_lengths
         self.bandwidth = bandwidth
         self.optimise_bandwidth = optimise_bandwidth
         self.kernel = kernel
@@ -430,34 +434,23 @@ class DAIndex(object):
 
         return round(sqs, 6)
 
-    def _obtain_da_index(self, group: str, score_bounds: tuple[float, float]) -> tuple[int, float]:
+    def _obtain_da_index(self, group: str, score_bounds: tuple[float, float]) -> tuple[int, float, bool, bool]:
         """
         Calculates the Deterioration Allocation Index (DAI) for a given cohort.
 
         Args:
-            df: The DataFrame containing the data.
-            cohort_name: The name of the cohort.
-            scores: The list of scores corresponding to the DataFrame rows.
-            score_bounds: The lower and upper bounds for the scores to be considered.
-            det_feature: The col to be used for DAI calculation.
-            det_threshold: The threshold value for the deterioration index.
-            det_label: The label for the deterioration index.
-            det_feature_func: A function to apply to each row to extract the col value.
-            det_list_lengths: A list of acceptable lengths for the det_list, in descending order.
-            min_det_v: The minimum value for the deterioration index.
-            max_det_v: The maximum value for the deterioration index.
-            is_discrete: Whether the col is discrete.
-            reverse: Whether to reverse the order of the col values.
-            optimise_bandwidth: Whether to search for the optimal bandwidth.
+            group: The name of the group for which to calculate the DAI.
+            score_bounds: A tuple containing the lower and upper bounds of the score range to consider.
 
         Returns:
             A tuple containing:
                 - int: The length of the det_list.
                 - float: The k-step value from the deterioration index calculation.
+                - bool: Whether the number of samples is sub-optimal.
+                - bool: Whether the calculation failed due to insufficient samples.
 
         Raises:
             UserWarning: If the number of samples is sub-optimal or insufficient for DAI calculation.
-
         """
         lb, ub = score_bounds
 
@@ -474,13 +467,11 @@ class DAIndex(object):
                 else:
                     det_list.append(r[self.det_feature.col])
             i += 1
-        for det_list_length in self.det_list_lengths:
-            if len(det_list) >= det_list_length:
-                if det_list_length != self.det_list_lengths[0]:
-                    sub_opt = True
-                break
-        else:
+
+        if len(det_list) < self.minimum_steps:
             return len(det_list), 0.0, False, True
+        elif len(det_list) < self.acceptable_steps:
+            sub_opt = True
 
         in_matrix = np.array(det_list)
         di_ret = self._deterioration_index(in_matrix[~np.isnan(in_matrix)].reshape(-1, 1), group)
