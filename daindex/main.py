@@ -641,7 +641,14 @@ class DAIndex(object):
         ratio = (a2 - a1) / a1 if a1 != 0 else "N/A"
         decision_ratio = (da2 - da1) / da1 if da1 != 0 else "N/A"
 
-        return {"Full": ratio, "Decision": decision_ratio}
+        return {
+            "Full": ratio,
+            "Decision": decision_ratio,
+            "Reference Area": a1,
+            "Comparison Area": a2,
+            "Reference Decision Area": da1,
+            "Comparison Decision Area": da2,
+        }
 
     def _calculate_group_ratios(self, groups: list[str], rerun: bool = True) -> None:
         for group1, group2 in itertools.permutations(groups, 2):
