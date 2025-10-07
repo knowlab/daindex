@@ -537,27 +537,45 @@ class DAIndex(object):
 
     def _area_under_curve(self, w_data: np.ndarray) -> tuple[float, float]:
         """
-        calculate the area under curve - do NOT do interpolation
+        Calculate total area under curve and decision area (above decision_boundary).
+        Uses linear interpolation to include a point exactly at the decision_boundary
+        if it falls between two x-values.
         """
-        prev = None
         area = 0.0
         decision_area = 0.0
-        n_points = 0
-        for r in w_data:
-            if prev is not None:
-                a = (r[1] + prev[1]) * (r[0] - prev[0]) / 2  # * r[2]
-                area += a
-                if prev[0] >= self.decision_boundary:
-                    decision_area += a
-                    n_points += 1
-            prev = r
+        decision_boundary = self.decision_boundary
 
-        if prev is not None:
-            a = (r[1] + prev[1]) * (r[0] - prev[0]) / 2  # * r[2]
-            area += a
-            if prev[0] >= self.decision_boundary:
-                decision_area += a
-                n_points += 1
+        # Sort by x just in case
+        w_data = w_data[np.argsort(w_data[:, 0])]
+
+        # Optionally insert an interpolated point at decision_boundary
+        x_vals = w_data[:, 0]
+        if decision_boundary > x_vals.min() and decision_boundary < x_vals.max():
+            # find where boundary falls between two points
+            idx = np.searchsorted(x_vals, decision_boundary)
+            if idx < len(w_data) and x_vals[idx] != decision_boundary:
+                # interpolate y at decision_boundary
+                x0, y0 = w_data[idx - 1, 0], w_data[idx - 1, 1]
+                x1, y1 = w_data[idx, 0], w_data[idx, 1]
+                t = (decision_boundary - x0) / (x1 - x0)
+                y_interp = y0 + (y1 - y0) * t
+                # insert new point
+                interp_point = np.array([[decision_boundary, y_interp]])
+                w_data = np.insert(w_data, idx, interp_point, axis=0)
+
+        # Integrate trapezoids
+        for i in range(1, len(w_data)):
+            x0, y0 = w_data[i - 1]
+            x1, y1 = w_data[i]
+            trap_area = (y0 + y1) * (x1 - x0) / 2  # * w_data[i, 2]  # weight by sample count
+            area += trap_area
+            if x1 > decision_boundary:
+                # Handle partial trapezoid if it starts before boundary
+                if x0 < decision_boundary:
+                    # area from boundary to x1
+                    # Already have interpolated point, so this is exact
+                    pass  # covered by insertion
+                decision_area += trap_area
 
         return area, decision_area
 
@@ -576,22 +594,18 @@ class DAIndex(object):
 
         data = self.group_ksteps[group]
         w_data = data[np.where(data[:, 1] > 0)][:, [0, 2, 1]]
-        area, decision_area = self._area_under_curve(w_data)
-
-        det_threshold = self.groups[group].det_threshold or self.det_feature.threshold
 
         return {
             "x": w_data[:, 0],
             "y": w_data[:, 1],
             "sample_counts": w_data[:, 2],
-            "area": area,
-            "decision_area": decision_area,
-            "det_threshold": det_threshold,
+            "det_threshold": self.groups[group].det_threshold or self.det_feature.threshold,
         }
 
     def _calculate_group_ratio(self, reference_group: str, other_group: str) -> dict[str, float | str]:
         """
         Calculate and return the DAI ratios between a reference group and another group.
+        Ensures both curves are evaluated over the same x-range.
 
         Args:
             reference_group: The name of the reference group.
@@ -602,10 +616,31 @@ class DAIndex(object):
         """
         if reference_group not in self.group_curves or other_group not in self.group_curves:
             raise ValueError("Group curves not found. Please run evaluation first.")
-        a1, da1 = (self.group_curves[reference_group]["area"], self.group_curves[reference_group]["decision_area"])
-        a2, da2 = (self.group_curves[other_group]["area"], self.group_curves[other_group]["decision_area"])
-        ratio = (a2 - a1) / a1
-        decision_ratio = ((da2 - da1) / da1) if da1 != 0 else "N/A"
+
+        ref_curve = self.group_curves[reference_group]
+        oth_curve = self.group_curves[other_group]
+
+        x_ref, y_ref = ref_curve["x"], ref_curve["y"]
+        x_oth, y_oth = oth_curve["x"], oth_curve["y"]
+
+        # Determine common x-range
+        x_min = max(x_ref.min(), x_oth.min())
+        x_max = min(x_ref.max(), x_oth.max())
+
+        # Trim both curves to common range
+        ref_mask = (x_ref >= x_min) & (x_ref <= x_max)
+        oth_mask = (x_oth >= x_min) & (x_oth <= x_max)
+
+        ref_trimmed = np.column_stack([x_ref[ref_mask], y_ref[ref_mask]])
+        oth_trimmed = np.column_stack([x_oth[oth_mask], y_oth[oth_mask]])
+
+        # Compute areas and ratios
+        a1, da1 = self._area_under_curve(ref_trimmed)
+        a2, da2 = self._area_under_curve(oth_trimmed)
+
+        ratio = (a2 - a1) / a1 if a1 != 0 else "N/A"
+        decision_ratio = (da2 - da1) / da1 if da1 != 0 else "N/A"
+
         return {"Full": ratio, "Decision": decision_ratio}
 
     def _calculate_group_ratios(self, groups: list[Group], rerun: bool = True) -> None:
@@ -796,7 +831,7 @@ class DAIndex(object):
 
         # Labels
         ax.set_xlabel(self.model_name)
-        ax.set_ylabel("Deterioration above threshold for group")
+        ax.set_ylabel("Proportion above deterioration threshold")
 
         # Decision boundary marker
         ax.axvline(self.decision_boundary, ls="--", lw=0.8, color="blue", alpha=0.6)
