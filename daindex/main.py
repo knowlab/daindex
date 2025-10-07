@@ -142,7 +142,7 @@ class DAIndex(object):
     1. This class should be instantiated first with a `DeteriorationFeature` object and a list of `Group` objects.
     2. The `evaluate_groups_by_predictions` or `evaluate_groups_by_models` methods can then be called to calculate
     the DAI for a reference and list of groups.
-    3. The results can be accessed using the `get_plots`, `get_ratios`, and `get_curves` methods.
+    3. The results can be accessed using the `get_plot`, `get_ratios`, and `get_curves` methods.
     4. Any issues during the calculations are raised as warnings, and can be accessed using the `get_sub_optimal_bins`,
     `get_failed_bins`, and `get_bin_samples` methods.
 
@@ -174,7 +174,7 @@ class DAIndex(object):
         setup_deterioration_feature: Set up the deterioration feature for the DAI calculation.
         evaluate_groups_by_predictions: Calculate the DAI for group(s) based on pre-calculated model predictions.
         evaluate_groups_by_models: Calculate the DAI for group(s) based on a list of trained models.
-        get_plots: Get the DAI plots for the (specified) group(s).
+        get_plot: Get the DAI plots for the (specified) group(s).
         get_ratios: Get the DAI ratios for the (specified) group(s).
         get_curves: Get the curve data for the (specified) group(s).
         get_sub_optimal_bins: Get information about any sub-optimal bins for the (specified) group(s).
@@ -206,7 +206,7 @@ class DAIndex(object):
         >>> model = RandomForestClassifier()
         >>> model.fit(cohort[["feature_1", "feature_2"]], cohort["outcome"])
         >>> dai.evaluate_groups_by_models(model, feature_list=["feature_1", "feature_2"], reference_group="Male")
-        >>> dai.get_plots(reference_group="Male")
+        >>> dai.get_plot(reference_group="Male")
     """
 
     def setup_groups(self, groups: list[Group], group_col: str = None) -> None:
@@ -489,7 +489,7 @@ class DAIndex(object):
         return len(det_list), di_ret, sub_opt, False
 
     def _get_group_ksteps(self, group: str) -> np.ndarray:
-        def process_bin(s: int, bounds: tuple[float, float]) -> tuple[float, int, float, bool, bool]:
+        def process_bin(s: float, bounds: tuple[float, float]) -> tuple[float, int, float, bool, bool]:
             length, di_ret, sub_opt, failed = self._obtain_da_index(group, bounds)
             return BinResult(s, length, di_ret, sub_opt, failed)
 
@@ -643,7 +643,7 @@ class DAIndex(object):
 
         return {"Full": ratio, "Decision": decision_ratio}
 
-    def _calculate_group_ratios(self, groups: list[Group], rerun: bool = True) -> None:
+    def _calculate_group_ratios(self, groups: list[str], rerun: bool = True) -> None:
         for group1, group2 in itertools.permutations(groups, 2):
             key = (group1, group2)
             if rerun or key not in self.group_ratios:
@@ -700,7 +700,7 @@ class DAIndex(object):
         self,
         predictions_col: str,
         reference_group: str,
-        groups: str | list[str] | None = None,
+        groups: list[str] | str | None = None,
         rerun: bool = True,
         n_jobs: int = -1,
     ) -> None:
@@ -710,8 +710,7 @@ class DAIndex(object):
         Args:
             predictions_col: The column name in the cohort DataFrame that contains the model predictions
             reference_group: The reference group name
-            groups: Single group name or list of group names to compare. If None, all groups except the reference group
-                will be evaluated
+            groups: Single group name or list of group names to compare. If None, all groups will be evaluated
             rerun: Whether to rerun the evaluation even if results already exist for any of the groups
             n_jobs: The number of jobs to run in parallel
         """
@@ -731,7 +730,7 @@ class DAIndex(object):
         models: list[ProbabilisticModel] | ProbabilisticModel,
         feature_list: list[str],
         reference_group: str,
-        groups: str | list[str] | None = None,
+        groups: list[str] | str | None = None,
         rerun: bool = True,
         n_jobs: int = -1,
     ) -> None:
@@ -742,8 +741,7 @@ class DAIndex(object):
             models: A single model object or a list of trained model objects that have a `predict_proba` method
             feature_list: A list of column names in the cohort DataFrame to be used as features for prediction
             reference_group: The reference group name
-            groups: Single group name or list of group names to compare. If None, all groups except the reference group
-                will be evaluated
+            groups: Single group name or list of group names to compare. If None, all groups will be evaluated
             rerun: Whether to rerun the evaluation even if results already exist for the groups
             n_jobs: The number of jobs to run in parallel
         """
@@ -760,11 +758,12 @@ class DAIndex(object):
             using_models=True,
         )
 
-    def get_plots(
+    def get_plot(
         self,
         reference_group: str,
-        groups: str | list[str] | None = None,
-        theme: str = "whitegrid",
+        groups: list[str] | str | None = None,
+        style: str = "darkgrid",
+        **kwargs: dict,
     ) -> plt.Figure:
         """
         Plot DA curves for selected groups with one reference group highlighted.
@@ -772,15 +771,15 @@ class DAIndex(object):
         to legend labels.
 
         Args:
-            reference_group: Name of the reference group.
-            groups: A single group name, list of names, or None (all other groups).
-            theme: Seaborn theme (e.g. 'whitegrid', 'darkgrid', 'ticks', etc.)
+            reference_group (str): Name of the reference group.
+            groups (list[str] | str | None): A single group name, list of names, or None (all other groups).
+            style (str): Seaborn theme (e.g. 'whitegrid', 'darkgrid', 'ticks', etc.)
+            **kwargs: Additional keyword arguments passed to `sns.set_theme()`
 
         Returns:
-            Matplotlib Figure
+            (plt.Figure): The final figure object.
         """
-        # Apply seaborn theme
-        sns.set_theme(style=theme)
+        sns.set_theme(style=style, **kwargs)
 
         # Validate inputs
         all_groups = self._validate_reference_group_inputs(reference_group, groups)
@@ -816,7 +815,7 @@ class DAIndex(object):
                     ratio_label = f" | Ratio: {full_ratio:+.3f}"
                 decision_ratio = self.group_ratios[key].get("Decision")
                 if decision_ratio != "N/A" and decision_ratio is not None:
-                    ratio_label += f" ({decision_ratio:+.3f} in decision region)"
+                    ratio_label += f" ({decision_ratio:+.3f} decision)"
 
             det_threshold = self.groups[group].det_threshold or self.det_feature.threshold
             threshold_label = f" | Thr: {det_threshold:.3f}"
@@ -865,13 +864,13 @@ class DAIndex(object):
         return df
 
     def get_curves(
-        self, groups: str | list[str] | None = None
+        self, groups: list[str] | str | None = None
     ) -> dict[str, float | np.ndarray] | dict[str, dict[str, float | np.ndarray]]:
         """
         Get the curve data for the (specified) group(s).
 
         Args:
-            groups (str | list[str] | None): The name(s) of the group(s) to get curve data for, or None for all groups.
+            groups (list[str] | str | None): The name(s) of the group(s) to get curve data for, or None for all groups.
 
         Returns:
             (dict[str, CurveData]): A dictionary containing the curve data for each specified group.
@@ -885,12 +884,12 @@ class DAIndex(object):
         else:
             return {group: self.group_curves[group] for group in groups}
 
-    def get_bin_samples(self, groups: str | list[str] | None = None) -> dict[float, int] | dict[str, dict[float, int]]:
+    def get_bin_samples(self, groups: list[str] | str | None = None) -> dict[float, int] | dict[str, dict[float, int]]:
         """
         Returns the number of samples used for each bin for the (specified) group(s).
 
         Args:
-            groups (str | list[str] | None): The name(s) of the group(s) to get bin sample information for, or None for
+            groups (list[str] | str | None): The name(s) of the group(s) to get bin sample information for, or None for
             all groups.
 
         Returns:
@@ -907,13 +906,13 @@ class DAIndex(object):
             return {group: self.group_bin_samples[group] for group in groups}
 
     def get_sub_optimal_bins(
-        self, groups: str | list[str] | None = None
+        self, groups: list[str] | str | None = None
     ) -> dict[float, int] | dict[str, dict[float, int]]:
         """
         Returns information about sub-optimal bins for the (specified) group(s).
 
         Args:
-            groups (str | list[str] | None): The name(s) of the group(s) to get sub-optimal bin information for, or None
+            groups (list[str] | str | None): The name(s) of the group(s) to get sub-optimal bin information for, or None
             for all groups.
 
         Returns:
@@ -929,12 +928,12 @@ class DAIndex(object):
         else:
             return {group: self.group_sub_optimal_bins[group] for group in groups}
 
-    def get_failed_bins(self, groups: str | list[str] | None = None) -> dict[float, int] | dict[str, dict[float, int]]:
+    def get_failed_bins(self, groups: list[str] | str | None = None) -> dict[float, int] | dict[str, dict[float, int]]:
         """
         Returns information about failed bins for the (specified) group(s).
 
         Args:
-            groups (str | list[str] | None): The name(s) of the group(s) to get failed bin information for, or None for
+            groups (list[str] | str | None): The name(s) of the group(s) to get failed bin information for, or None for
             all groups.
 
         Returns:
