@@ -320,10 +320,10 @@ class DAIndex(object):
         # detect pulse like PDF
         if bandwidth < 0.1:
             # force is_discrete because the bestfitted_bandwith_bw would lead to one
-            self.is_discrete = True
+            self.det_feature.is_discrete = True
         elif bandwidth > 0.7:
             # force is_discrete to be false because the fitted_bandwith would lead to one
-            self.is_discrete = False
+            self.det_feature.is_discrete = False
 
         return kde
 
@@ -349,7 +349,7 @@ class DAIndex(object):
         threshold_index = int((threshold - low_bound) / step)
         if threshold == low_bound + boundary_offset:
             threshold_index = int((threshold - low_bound - boundary_offset) / step)
-        elif self.is_discrete:
+        elif self.det_feature.is_discrete:
             # discrete values will lead to PDF shape like pulses,
             # it's important to start with the valley between the pulse you want to include and the one before that
             # the following is to find the valley index
