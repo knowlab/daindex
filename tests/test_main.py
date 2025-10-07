@@ -265,7 +265,7 @@ class TestDAIndex:
                 models=mock_model, feature_list=["feature_1", "feature_2"], reference_group="Male"
             )
 
-    def test_get_plots(self, dai_instance: DAIndex) -> None:
+    def test_get_plot(self, dai_instance: DAIndex) -> None:
         """Test plot generation."""
         # Mock the required data
         dai_instance.group_curves = {
@@ -274,7 +274,7 @@ class TestDAIndex:
         }
         dai_instance.group_ratios = {("Male", "Female"): {"Full": 0.1, "Decision": 0.05}}
 
-        fig = dai_instance.get_plots(reference_group="Male")
+        fig = dai_instance.get_plot(reference_group="Male")
         assert isinstance(fig, plt.Figure)
 
     def test_get_ratios(self, dai_instance: DAIndex) -> None:
