@@ -11,7 +11,7 @@ authors = [
     { name = "Harrison Wilde", email = "h.wilde@ucl.ac.uk" },
     { name = "Honghan Wu", email = "honghan.wu@gmail.com" },
 ]
-version = "0.8.2"
+version = "0.9.0"
 description = "Deterioration Allocation Index Framework"
 license = "MIT"
 readme = "README.md"
@@ -34,6 +34,7 @@ dependencies = [
     "numpy>=2.2.6",
     "pandas>=2.3.1",
     "scikit-learn>=1.7.1",
+    "seaborn>=0.13.2",
     "tqdm>=4.67.1",
 ]
 
